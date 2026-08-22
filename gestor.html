@@ -162,6 +162,7 @@ function verDetalle(codigo) {
       const campo = datos[headerReal];
       const fieldId = fieldIdDe(headerReal);
       const estado = campo.estado_aprobacion || 'PENDIENTE';
+      const pctActual = porcentajeANumero(campo.valor);
       if (campo.editable) {
         // PENDIENTE (nunca enviado) o RECHAZADO (puede corregir y reenviar)
         const avisoRechazo = estado === 'RECHAZADO'
@@ -171,20 +172,21 @@ function verDetalle(codigo) {
           <label>${nombreMes} <span class="badge ${estado}">${estado === 'RECHAZADO' ? 'rechazado - corrige y reenvía' : 'pendiente de envío'}</span></label>
           ${avisoRechazo}
           <div class="campo-input-row">
-            <input class="celda-editable" id="${fieldId}" value="${campo.valor}" placeholder="0%">
-            <button onclick="guardarCampo('${codigo.replace(/'/g,"\\'")}', '${headerReal.replace(/'/g,"\\'")}', '${fieldId}', this)">Guardar</button>
+            <input class="celda-editable" type="number" min="0" max="100" step="1" style="max-width:70px" id="${fieldId}" value="${pctActual}">
+            <span style="align-self:center;font-weight:600">%</span>
+            <button onclick="guardarCampoPorcentaje('${codigo.replace(/'/g,"\\'")}', '${headerReal.replace(/'/g,"\\'")}', '${fieldId}', this)">Guardar</button>
           </div>
           <button class="aprobar" style="margin-top:4px" onclick="enviarAprobacion('${codigo.replace(/'/g,"\\'")}', ${mesNum})">Enviar a aprobación</button>
         </div>`;
       } else if (estado === 'ENVIADO') {
         html += `<div class="campo-item">
           <label>${nombreMes} <span class="badge ENVIADO">enviado - esperando aprobación</span></label>
-          <input class="celda-bloqueada" value="${campo.valor}" disabled>
+          <input class="celda-bloqueada" value="${pctActual}%" disabled>
         </div>`;
       } else {
         html += `<div class="campo-item">
           <label>${nombreMes} <span class="badge APROBADO">Aprobado</span></label>
-          <input class="celda-bloqueada" value="${campo.valor}" disabled>
+          <input class="celda-bloqueada" value="${pctActual}%" disabled>
         </div>`;
       }
     });
@@ -231,6 +233,43 @@ async function guardarCampo(codigo, header, fieldId, boton) {
     cargarMatriz();
   } catch (err) {
     console.error('Error al guardar la celda:', err);
+    alert('Ocurrió un error de conexión al guardar. Revisa la consola (F12) para más detalle.');
+    if (boton) { boton.disabled = false; boton.textContent = textoOriginal; }
+  }
+}
+
+/**
+ * Guarda el avance físico mensual: el Gestor ve/edita un número 0-100 (ej. 50 = 50%),
+ * pero el Sheet almacena la fracción 0-1 (ej. 0.5), que es como está formateada la columna
+ * y como la interpretan las fórmulas de TRIMESTRE / AVANCE FÍSICO del sistema.
+ */
+async function guardarCampoPorcentaje(codigo, header, fieldId, boton) {
+  const inputEl = document.getElementById(fieldId);
+  const pctIngresado = parseFloat(inputEl.value);
+  if (isNaN(pctIngresado) || pctIngresado < 0 || pctIngresado > 100) {
+    alert('Ingresa un porcentaje válido entre 0 y 100.');
+    return;
+  }
+  const fraccion = pctIngresado / 100;
+  if (boton) { var textoOriginal = boton.textContent; boton.disabled = true; boton.textContent = 'Guardando...'; }
+  try {
+    const res = await apiCall('guardarCelda', { codigo_proyecto: codigo, header, valor: fraccion });
+    if (!res.ok) {
+      alert('No se pudo guardar: ' + res.error);
+      if (boton) { boton.disabled = false; boton.textContent = textoOriginal; }
+      return;
+    }
+    const fila = matrizData.filas.find(f => String(f.codigo_proyecto) === String(codigo));
+    if (fila && fila.datos[header]) fila.datos[header].valor = fraccion;
+    if (res.debug) console.log('Guardado en Sheet:', res.debug);
+
+    if (boton) {
+      boton.textContent = '✓ Guardado';
+      setTimeout(() => { boton.disabled = false; boton.textContent = textoOriginal; }, 1500);
+    }
+    cargarMatriz();
+  } catch (err) {
+    console.error('Error al guardar el porcentaje:', err);
     alert('Ocurrió un error de conexión al guardar. Revisa la consola (F12) para más detalle.');
     if (boton) { boton.disabled = false; boton.textContent = textoOriginal; }
   }
