@@ -171,9 +171,12 @@ async function cargarMatriz() {
   const tbody = document.getElementById('tablaProyectos');
   tbody.innerHTML = '';
   res.filas.forEach(fila => {
-    const proyecto = fila.datos['PROYECTO'] ? fila.datos['PROYECTO'].valor : '';
-    const unidad = fila.datos['UNIDAD ADMINISTRATIVA'] ? fila.datos['UNIDAD ADMINISTRATIVA'].valor : '';
-    const avanceFisico = fila.datos['AVANCE FÍSICO'] ? fila.datos['AVANCE FÍSICO'].valor : 0;
+    const claveProyecto = buscarHeaderReal(fila.datos, 'PROYECTO');
+    const claveUnidad = buscarHeaderReal(fila.datos, 'UNIDAD ADMINISTRATIVA');
+    const claveAvance = buscarHeaderReal(fila.datos, 'AVANCE FÍSICO');
+    const proyecto = claveProyecto ? fila.datos[claveProyecto].valor : '';
+    const unidad = claveUnidad ? fila.datos[claveUnidad].valor : '';
+    const avanceFisico = claveAvance ? fila.datos[claveAvance].valor : 0;
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${fila.codigo_proyecto}</td><td>${proyecto}</td><td>${unidad}</td>
       <td>${renderProgreso(avanceFisico)}</td>
@@ -192,21 +195,38 @@ function fieldIdDe(header) {
   return 'campo_' + header.replace(/[^a-zA-Z0-9]/g, '_');
 }
 
+/** Colapsa espacios/saltos de línea y normaliza mayúsculas, para comparar encabezados
+ *  sin que fallen por espacios invisibles provenientes del Google Sheet original. */
+function normalizarHeader(h) {
+  return String(h || '').replace(/\s+/g, ' ').trim().toUpperCase();
+}
+
+/** Busca en "datos" la clave real (tal como llegó del backend) que corresponde
+ *  al encabezado que buscamos, ignorando diferencias de espacios en blanco. */
+function buscarHeaderReal(datos, headerBuscado) {
+  const objetivo = normalizarHeader(headerBuscado);
+  return Object.keys(datos).find(k => normalizarHeader(k) === objetivo) || null;
+}
+
 /** Renderiza un campo individual (label + input o valor bloqueado + botón Guardar si aplica) */
-function renderCampo(codigo, header, campo) {
-  if (!campo) return `<div class="campo-item"><label>${header}</label><span class="valor-vacio">— (columna no encontrada) —</span></div>`;
-  const fieldId = fieldIdDe(header);
+function renderCampo(codigo, headerBuscado, datos) {
+  const headerReal = buscarHeaderReal(datos, headerBuscado);
+  if (!headerReal) {
+    return `<div class="campo-item"><label>${headerBuscado}</label><span class="valor-vacio">— (columna no encontrada) —</span></div>`;
+  }
+  const campo = datos[headerReal];
+  const fieldId = fieldIdDe(headerReal);
   if (campo.editable) {
     return `<div class="campo-item">
-      <label>${header}</label>
+      <label>${headerBuscado}</label>
       <div class="campo-input-row">
         <input class="celda-editable" id="${fieldId}" value="${campo.valor}">
-        <button onclick="guardarCampo('${codigo.replace(/'/g,"\\'")}', '${header.replace(/'/g,"\\'")}', '${fieldId}', this)">Guardar</button>
+        <button onclick="guardarCampo('${codigo.replace(/'/g,"\\'")}', '${headerReal.replace(/'/g,"\\'")}', '${fieldId}', this)">Guardar</button>
       </div>
     </div>`;
   }
   return `<div class="campo-item">
-    <label>${header} <span class="badge SISTEMA">${campo.perfil_columna}</span></label>
+    <label>${headerBuscado} <span class="badge SISTEMA">${campo.perfil_columna}</span></label>
     <input class="celda-bloqueada" value="${campo.valor}" disabled>
   </div>`;
 }
@@ -219,13 +239,14 @@ function renderBloqueTrimestral(codigo, datos, trimestres, tituloExtra) {
   trimestres.forEach(t => { t.meses.forEach(m => { html += `<th>${m.replace(/^E-\s*/, '')}</th>`; }); });
   html += '</tr></thead><tbody><tr>';
   trimestres.forEach(t => {
-    t.meses.forEach(mesHeader => {
-      const campo = datos[mesHeader];
-      if (!campo) { html += '<td>—</td>'; return; }
-      const fieldId = fieldIdDe(mesHeader);
+    t.meses.forEach(mesHeaderBuscado => {
+      const mesHeaderReal = buscarHeaderReal(datos, mesHeaderBuscado);
+      if (!mesHeaderReal) { html += '<td>—</td>'; return; }
+      const campo = datos[mesHeaderReal];
+      const fieldId = fieldIdDe(mesHeaderReal);
       if (campo.editable) {
         html += `<td><input class="celda-editable" style="width:70px" id="${fieldId}" value="${campo.valor}">
-          <button style="padding:3px 6px;font-size:11px;margin-top:2px" onclick="guardarCampo('${codigo.replace(/'/g,"\\'")}', '${mesHeader.replace(/'/g,"\\'")}', '${fieldId}', this)">💾</button></td>`;
+          <button style="padding:3px 6px;font-size:11px;margin-top:2px" onclick="guardarCampo('${codigo.replace(/'/g,"\\'")}', '${mesHeaderReal.replace(/'/g,"\\'")}', '${fieldId}', this)">💾</button></td>`;
       } else {
         html += `<td><input class="celda-bloqueada" style="width:70px" value="${campo.valor}" disabled></td>`;
       }
@@ -233,12 +254,13 @@ function renderBloqueTrimestral(codigo, datos, trimestres, tituloExtra) {
   });
   html += '</tr><tr>';
   trimestres.forEach(t => {
-    const campoTotal = datos[t.total];
+    const totalHeaderReal = buscarHeaderReal(datos, t.total);
+    const campoTotal = totalHeaderReal ? datos[totalHeaderReal] : null;
     html += `<td colspan="3" class="celda-total-sistema">Total trimestre: <b>${campoTotal ? campoTotal.valor : '—'}</b></td>`;
   });
   html += '</tr></tbody></table>';
   if (tituloExtra && tituloExtra.length) {
-    tituloExtra.forEach(header => { html += renderCampo(codigo, header, datos[header]); });
+    tituloExtra.forEach(header => { html += renderCampo(codigo, header, datos); });
   }
   return html;
 }
@@ -256,9 +278,11 @@ function verDetalle(codigo) {
   const cont = document.getElementById('detalleProyecto');
   cont.style.display = 'block';
 
+  const claveProyectoDet = buscarHeaderReal(datos, 'PROYECTO');
+  const claveAvanceDet = buscarHeaderReal(datos, 'AVANCE FÍSICO');
   let html = `<div class="detalle-header">
-    <h3>Proyecto ${codigo}${datos['PROYECTO'] ? ' — ' + datos['PROYECTO'].valor : ''}</h3>
-    ${datos['AVANCE FÍSICO'] ? renderProgreso(datos['AVANCE FÍSICO'].valor) : ''}
+    <h3>Proyecto ${codigo}${claveProyectoDet ? ' — ' + datos[claveProyectoDet].valor : ''}</h3>
+    ${claveAvanceDet ? renderProgreso(datos[claveAvanceDet].valor) : ''}
     <button class="secundario" onclick="cerrarDetalle()">Cerrar</button>
   </div>`;
 
@@ -267,7 +291,7 @@ function verDetalle(codigo) {
     if (seccion.trimestres) {
       html += renderBloqueTrimestral(codigo, datos, seccion.trimestres, seccion.extra);
     } else {
-      seccion.campos.forEach(header => { html += renderCampo(codigo, header, datos[header]); });
+      seccion.campos.forEach(header => { html += renderCampo(codigo, header, datos); });
     }
     html += '</div></div>';
   });
