@@ -102,7 +102,8 @@ const SECCIONES = [
       { meses: ['E- JULIO', 'E-AGOSTO', 'E-SEPTIEMBRE'], total: 'TRIMESTRE 3' },
       { meses: ['E-OCTUBRE', 'E-NOVIEMBRE', 'E-DICIEMBRE'], total: 'TRIMESTRE 3' }
     ],
-    extra: ['AVANCE FÍSICO']
+    extra: ['AVANCE FÍSICO'],
+    esPorcentaje: true
   },
   {
     titulo: '6. Ejecución mensual - pagado',
@@ -294,7 +295,7 @@ async function guardarCampoPorcentaje(codigo, header, fieldId, boton) {
 }
 
 /** Renderiza un bloque de 4 trimestres (3 meses + total del sistema cada uno) en formato compacto de tabla */
-function renderBloqueTrimestral(codigo, datos, trimestres, tituloExtra) {
+function renderBloqueTrimestral(codigo, datos, trimestres, tituloExtra, esPorcentaje) {
   let html = '<table class="tabla-trimestral"><thead><tr>';
   trimestres.forEach((t, i) => { html += `<th colspan="3">Trimestre ${i + 1}</th>`; });
   html += '</tr><tr>';
@@ -306,11 +307,12 @@ function renderBloqueTrimestral(codigo, datos, trimestres, tituloExtra) {
       if (!mesHeaderReal) { html += '<td>—</td>'; return; }
       const campo = datos[mesHeaderReal];
       const fieldId = fieldIdDe(mesHeaderReal);
+      const valorMostrado = esPorcentaje ? porcentajeANumero(campo.valor) + '%' : campo.valor;
       if (campo.editable) {
         html += `<td><input class="celda-editable" style="width:70px" id="${fieldId}" value="${campo.valor}">
           <button style="padding:3px 6px;font-size:11px;margin-top:2px" onclick="guardarCampo('${codigo.replace(/'/g,"\\'")}', '${mesHeaderReal.replace(/'/g,"\\'")}', '${fieldId}', this)">💾</button></td>`;
       } else {
-        html += `<td><input class="celda-bloqueada" style="width:70px" value="${campo.valor}" disabled></td>`;
+        html += `<td><input class="celda-bloqueada" style="width:70px" value="${valorMostrado}" disabled></td>`;
       }
     });
   });
@@ -318,11 +320,14 @@ function renderBloqueTrimestral(codigo, datos, trimestres, tituloExtra) {
   trimestres.forEach(t => {
     const totalHeaderReal = buscarHeaderReal(datos, t.total);
     const campoTotal = totalHeaderReal ? datos[totalHeaderReal] : null;
-    html += `<td colspan="3" class="celda-total-sistema">Total trimestre: <b>${campoTotal ? campoTotal.valor : '—'}</b></td>`;
+    const totalMostrado = campoTotal ? (esPorcentaje ? porcentajeANumero(campoTotal.valor) + '%' : campoTotal.valor) : '—';
+    html += `<td colspan="3" class="celda-total-sistema">Total trimestre: <b>${totalMostrado}</b></td>`;
   });
   html += '</tr></tbody></table>';
   if (tituloExtra && tituloExtra.length) {
-    tituloExtra.forEach(header => { html += renderCampo(codigo, header, datos); });
+    tituloExtra.forEach(header => {
+      html += esPorcentaje ? renderCampoPorcentaje(codigo, header, datos) : renderCampo(codigo, header, datos);
+    });
   }
   return html;
 }
@@ -351,7 +356,7 @@ function verDetalle(codigo) {
   SECCIONES.forEach(seccion => {
     html += `<div class="seccion"><h4 class="seccion-titulo">${seccion.titulo}</h4><div class="seccion-cuerpo">`;
     if (seccion.trimestres) {
-      html += renderBloqueTrimestral(codigo, datos, seccion.trimestres, seccion.extra);
+      html += renderBloqueTrimestral(codigo, datos, seccion.trimestres, seccion.extra, seccion.esPorcentaje);
     } else if (seccion.tipo === 'porcentaje') {
       seccion.campos.forEach(header => { html += renderCampoPorcentaje(codigo, header, datos); });
     } else {
