@@ -161,14 +161,25 @@ function verDetalle(codigo) {
       }
       const campo = datos[headerReal];
       const fieldId = fieldIdDe(headerReal);
+      const estado = campo.estado_aprobacion || 'PENDIENTE';
       if (campo.editable) {
+        // PENDIENTE (nunca enviado) o RECHAZADO (puede corregir y reenviar)
+        const avisoRechazo = estado === 'RECHAZADO'
+          ? `<div style="font-size:11px;color:var(--rojo);margin-bottom:4px">Rechazado: ${campo.comentario_rechazo || 'sin motivo especificado'}</div>`
+          : '';
         html += `<div class="campo-item">
-          <label>${nombreMes} <span class="badge PENDIENTE">pendiente de envío</span></label>
+          <label>${nombreMes} <span class="badge ${estado}">${estado === 'RECHAZADO' ? 'rechazado - corrige y reenvía' : 'pendiente de envío'}</span></label>
+          ${avisoRechazo}
           <div class="campo-input-row">
             <input class="celda-editable" id="${fieldId}" value="${campo.valor}" placeholder="0%">
             <button onclick="guardarCampo('${codigo.replace(/'/g,"\\'")}', '${headerReal.replace(/'/g,"\\'")}', '${fieldId}', this)">Guardar</button>
           </div>
           <button class="aprobar" style="margin-top:4px" onclick="enviarAprobacion('${codigo.replace(/'/g,"\\'")}', ${mesNum})">Enviar a aprobación</button>
+        </div>`;
+      } else if (estado === 'ENVIADO') {
+        html += `<div class="campo-item">
+          <label>${nombreMes} <span class="badge ENVIADO">enviado - esperando aprobación</span></label>
+          <input class="celda-bloqueada" value="${campo.valor}" disabled>
         </div>`;
       } else {
         html += `<div class="campo-item">
@@ -227,7 +238,14 @@ async function guardarCampo(codigo, header, fieldId, boton) {
 async function enviarAprobacion(codigo, mes) {
   const res = await apiCall('enviarAprobacion', { codigo_proyecto: codigo, mes });
   if (!res.ok) { alert(res.error); return; }
-  alert('Enviado a aprobación del Director de Planificación.');
+
+  if (res.notificacion && res.notificacion.enviados > 0) {
+    alert('Enviado a aprobación. Se notificó por correo al Director de Planificación.');
+  } else {
+    alert('El envío a aprobación se registró correctamente, PERO el correo de aviso al Director no se pudo enviar.\n\n' +
+      'Motivo: ' + (res.notificacion ? res.notificacion.motivo : 'desconocido') +
+      '\n\nAvisa al Director por otro medio, o pide al Administrador que revise la configuración de correo.');
+  }
   await cargarMatriz();
   verDetalle(codigo);
 }
