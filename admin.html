@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Administrador - Gestión de Objetivos</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<header>
+  <h1>Panel de Administrador</h1>
+  <div class="usuario-info">
+    <span id="nombreUsuario"></span> &nbsp;
+    <button class="secundario" onclick="salir()">Cerrar sesión</button>
+  </div>
+</header>
+
+<main>
+  <div class="tabs">
+    <button class="activo" onclick="mostrarTab('usuarios')">Usuarios</button>
+    <button onclick="mostrarTab('mapeo')">Mapeo Unidad → Gestor</button>
+  </div>
+
+  <!-- ===== USUARIOS ===== -->
+  <section id="tabUsuarios" class="tarjeta">
+    <h3>Crear nuevo usuario</h3>
+    <form id="formUsuario">
+      <input type="text" id="u_usuario" placeholder="usuario (login)" required>
+      <input type="password" id="u_password" placeholder="password" required>
+      <input type="text" id="u_nombre" placeholder="nombre completo">
+      <input type="email" id="u_email" placeholder="email">
+      <select id="u_perfil">
+        <option value="Director de Planificación">Director de Planificación</option>
+        <option value="Gestor de Objetivos">Gestor de Objetivos</option>
+        <option value="Administrador">Administrador</option>
+      </select>
+      <button type="submit">Crear usuario</button>
+    </form>
+    <div class="error" id="errorUsuario"></div>
+
+    <h3>Usuarios existentes</h3>
+    <table>
+      <thead><tr><th>Usuario</th><th>Nombre</th><th>Perfil</th><th>Email</th><th>Estado</th><th></th></tr></thead>
+      <tbody id="tablaUsuarios"></tbody>
+    </table>
+  </section>
+
+  <!-- ===== MAPEO ===== -->
+  <section id="tabMapeo" class="tarjeta" style="display:none">
+    <h3>Asignar Unidad Administrativa a un Gestor de Objetivos</h3>
+    <form id="formMapeo">
+      <input type="text" id="m_unidad" placeholder="Unidad Administrativa (texto exacto de la MATRIZ)" style="width:340px" required>
+      <input type="text" id="m_usuario" placeholder="usuario del Gestor" required>
+      <button type="submit">Asignar</button>
+    </form>
+
+    <h3>Mapeos actuales</h3>
+    <table>
+      <thead><tr><th>Unidad Administrativa</th><th>Usuario Gestor</th><th></th></tr></thead>
+      <tbody id="tablaMapeos"></tbody>
+    </table>
+  </section>
+</main>
+
+<script src="js/config.js"></script>
+<script src="js/api.js"></script>
+<script>
+requireLogin(['Administrador']);
+document.getElementById('nombreUsuario').textContent = sessionStorage.getItem('nombre') || sessionStorage.getItem('usuario');
+
+function salir() { cerrarSesionLocal(); window.location.href = 'index.html'; }
+
+function mostrarTab(tab) {
+  document.getElementById('tabUsuarios').style.display = tab === 'usuarios' ? 'block' : 'none';
+  document.getElementById('tabMapeo').style.display = tab === 'mapeo' ? 'block' : 'none';
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('activo'));
+  event.target.classList.add('activo');
+  if (tab === 'mapeo') cargarMapeos();
+}
+
+async function cargarUsuarios() {
+  const res = await apiCall('listarUsuarios', {});
+  const tbody = document.getElementById('tablaUsuarios');
+  tbody.innerHTML = '';
+  if (!res.ok) return;
+  res.usuarios.forEach(u => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${u.usuario}</td><td>${u.nombre || ''}</td><td>${u.perfil}</td><td>${u.email || ''}</td>
+      <td>${u.estado}</td>
+      <td><button class="secundario" onclick="toggleEstado('${u.usuario}','${u.estado}')">
+        ${u.estado === 'ACTIVO' ? 'Desactivar' : 'Activar'}</button></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function toggleEstado(usuario, estadoActual) {
+  const nuevoEstado = estadoActual === 'ACTIVO' ? 'INACTIVO' : 'ACTIVO';
+  await apiCall('actualizarUsuario', { usuario, estado: nuevoEstado });
+  cargarUsuarios();
+}
+
+document.getElementById('formUsuario').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const errorDiv = document.getElementById('errorUsuario');
+  errorDiv.textContent = '';
+  const res = await apiCall('crearUsuario', {
+    usuario: document.getElementById('u_usuario').value.trim(),
+    password: document.getElementById('u_password').value,
+    nombre: document.getElementById('u_nombre').value.trim(),
+    email: document.getElementById('u_email').value.trim(),
+    perfil: document.getElementById('u_perfil').value
+  });
+  if (!res.ok) { errorDiv.textContent = res.error; return; }
+  document.getElementById('formUsuario').reset();
+  cargarUsuarios();
+});
+
+async function cargarMapeos() {
+  const res = await apiCall('listarMapeos', {});
+  const tbody = document.getElementById('tablaMapeos');
+  tbody.innerHTML = '';
+  if (!res.ok) return;
+  res.mapeos.forEach(m => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${m.unidad_administrativa}</td><td>${m.usuario_gestor}</td>
+      <td><button class="rechazar" onclick="eliminarMapeo('${m.unidad_administrativa}','${m.usuario_gestor}')">Quitar</button></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function eliminarMapeo(unidad, usuario) {
+  await apiCall('eliminarMapeo', { unidad, usuario_gestor: usuario });
+  cargarMapeos();
+}
+
+document.getElementById('formMapeo').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  await apiCall('crearMapeo', {
+    unidad: document.getElementById('m_unidad').value.trim(),
+    usuario_gestor: document.getElementById('m_usuario').value.trim()
+  });
+  document.getElementById('formMapeo').reset();
+  cargarMapeos();
+});
+
+cargarUsuarios();
+</script>
+</body>
+</html>

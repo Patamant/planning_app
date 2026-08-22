@@ -1,0 +1,115 @@
+:root {
+  --azul: #1d4e89;
+  --azul-oscuro: #14345c;
+  --gris: #f4f6f8;
+  --gris-borde: #dce1e6;
+  --verde: #2e7d32;
+  --rojo: #c62828;
+  --texto: #23303d;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  background: var(--gris);
+  color: var(--texto);
+  margin: 0;
+}
+
+header {
+  background: var(--azul);
+  color: white;
+  padding: 14px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+header h1 { font-size: 18px; margin: 0; }
+
+header .usuario-info { font-size: 13px; opacity: 0.9; }
+
+button {
+  background: var(--azul);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+button:hover { background: var(--azul-oscuro); }
+button.secundario { background: #6b7785; }
+button.aprobar { background: var(--verde); }
+button.rechazar { background: var(--rojo); }
+
+.login-caja {
+  max-width: 360px;
+  margin: 90px auto;
+  background: white;
+  padding: 32px;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+}
+.login-caja h2 { margin-top: 0; text-align: center; color: var(--azul); }
+.login-caja input {
+  width: 100%; padding: 10px; margin: 6px 0 14px 0;
+  border: 1px solid var(--gris-borde); border-radius: 4px; font-size: 14px;
+}
+.login-caja .error { color: var(--rojo); font-size: 13px; min-height: 18px; }
+
+main { padding: 20px; max-width: 1400px; margin: 0 auto; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  font-size: 13px;
+}
+th, td {
+  border: 1px solid var(--gris-borde);
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+th { background: #eef2f6; position: sticky; top: 0; }
+tr:hover td { background: #fafcff; }
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.badge.PENDIENTE { background: #eee; color: #666; }
+.badge.ENVIADO { background: #fff3cd; color: #8a6500; }
+.badge.APROBADO { background: #d7f0d9; color: var(--verde); }
+.badge.RECHAZADO { background: #fbdcdc; color: var(--rojo); }
+
+input.celda-editable {
+  width: 90px;
+  padding: 4px;
+  border: 1px solid var(--gris-borde);
+  border-radius: 3px;
+}
+input.celda-bloqueada {
+  width: 90px;
+  padding: 4px;
+  border: none;
+  background: transparent;
+  color: #999;
+}
+
+.tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+.tabs button { background: white; color: var(--azul); border: 1px solid var(--azul); }
+.tabs button.activo { background: var(--azul); color: white; }
+
+.tarjeta {
+  background: white;
+  border-radius: 6px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}

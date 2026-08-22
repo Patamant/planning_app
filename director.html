@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Director de Planificación - Gestión de Objetivos</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<header>
+  <h1>Director de Planificación</h1>
+  <div class="usuario-info">
+    <span id="nombreUsuario"></span> &nbsp;
+    <button class="secundario" onclick="salir()">Cerrar sesión</button>
+  </div>
+</header>
+
+<main>
+  <div class="tabs">
+    <button class="activo" onclick="mostrarTab('matriz')">Matriz de Proyectos</button>
+    <button onclick="mostrarTab('pendientes')">Pendientes de aprobación</button>
+  </div>
+
+  <!-- ===== MATRIZ ===== -->
+  <section id="tabMatriz">
+    <div class="tarjeta">
+      <table>
+        <thead><tr><th>Código</th><th>Proyecto</th><th>Unidad Administrativa</th><th></th></tr></thead>
+        <tbody id="tablaProyectos"></tbody>
+      </table>
+    </div>
+    <div class="tarjeta" id="detalleProyecto" style="display:none"></div>
+  </section>
+
+  <!-- ===== PENDIENTES ===== -->
+  <section id="tabPendientes" class="tarjeta" style="display:none">
+    <h3>Avances mensuales pendientes de tu aprobación</h3>
+    <table>
+      <thead><tr><th>Código Proyecto</th><th>Mes</th><th>Enviado por</th><th>Fecha</th><th>Acción</th></tr></thead>
+      <tbody id="tablaPendientes"></tbody>
+    </table>
+  </section>
+</main>
+
+<script src="js/config.js"></script>
+<script src="js/api.js"></script>
+<script>
+requireLogin(['Director de Planificación']);
+document.getElementById('nombreUsuario').textContent = sessionStorage.getItem('nombre') || sessionStorage.getItem('usuario');
+
+const MESES = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
+
+function salir() { cerrarSesionLocal(); window.location.href = 'index.html'; }
+
+function mostrarTab(tab) {
+  document.getElementById('tabMatriz').style.display = tab === 'matriz' ? 'block' : 'none';
+  document.getElementById('tabPendientes').style.display = tab === 'pendientes' ? 'block' : 'none';
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('activo'));
+  event.target.classList.add('activo');
+  if (tab === 'pendientes') cargarPendientes();
+}
+
+let matrizData = null;
+
+async function cargarMatriz() {
+  const res = await apiCall('obtenerMatriz', {});
+  if (!res.ok) { alert(res.error); return; }
+  matrizData = res;
+  const tbody = document.getElementById('tablaProyectos');
+  tbody.innerHTML = '';
+  res.filas.forEach(fila => {
+    const proyecto = fila.datos['PROYECTO'] ? fila.datos['PROYECTO'].valor : '';
+    const unidad = fila.datos['UNIDAD ADMINISTRATIVA'] ? fila.datos['UNIDAD ADMINISTRATIVA'].valor : '';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${fila.codigo_proyecto}</td><td>${proyecto}</td><td>${unidad}</td>
+      <td><button onclick="verDetalle('${fila.codigo_proyecto}')">Ver / Editar</button></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function verDetalle(codigo) {
+  const fila = matrizData.filas.find(f => f.codigo_proyecto === codigo);
+  if (!fila) return;
+  const cont = document.getElementById('detalleProyecto');
+  cont.style.display = 'block';
+  cont.innerHTML = `<h3>Proyecto: ${codigo}</h3><div id="camposDetalle"></div>`;
+  const camposDiv = document.getElementById('camposDetalle');
+
+  Object.keys(fila.datos).forEach(header => {
+    const campo = fila.datos[header];
+    if (header === 'CÓDIGO DEL PROYECTO (ASIGNADO POR DIRECCIÓN)') return;
+    const fieldId = 'campo_' + header.replace(/[^a-zA-Z0-9]/g, '_');
+    const row = document.createElement('div');
+    row.style.marginBottom = '8px';
+    if (campo.editable) {
+      row.innerHTML = `<label><b>${header}</b></label><br>
+        <input class="celda-editable" style="width:400px" id="${fieldId}" value="${campo.valor}">
+        <button onclick="guardarCampo('${codigo}', '${header.replace(/'/g,"\\'")}', '${fieldId}')">Guardar</button>`;
+    } else {
+      row.innerHTML = `<label><b>${header}</b> <small>(${campo.perfil_columna})</small></label><br>
+        <input class="celda-bloqueada" style="width:400px" value="${campo.valor}" disabled>`;
+    }
+    camposDiv.appendChild(row);
+  });
+}
+
+async function guardarCampo(codigo, header, fieldId) {
+  const valor = document.getElementById(fieldId).value;
+  const res = await apiCall('guardarCelda', { codigo_proyecto: codigo, header, valor });
+  if (!res.ok) { alert(res.error); return; }
+  await cargarMatriz();
+  verDetalle(codigo);
+}
+
+async function cargarPendientes() {
+  const res = await apiCall('obtenerPendientesAprobacion', {});
+  const tbody = document.getElementById('tablaPendientes');
+  tbody.innerHTML = '';
+  if (!res.ok) return;
+  res.pendientes.forEach(p => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${p.codigo_proyecto}</td><td>${MESES[p.mes - 1]}</td><td>${p.usuario_envia}</td>
+      <td>${new Date(p.fecha_envio).toLocaleString()}</td>
+      <td>
+        <button class="aprobar" onclick="resolver('${p.codigo_proyecto}', ${p.mes}, 'APROBADO')">Aprobar</button>
+        <button class="rechazar" onclick="resolver('${p.codigo_proyecto}', ${p.mes}, 'RECHAZADO')">Rechazar</button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function resolver(codigo, mes, decision) {
+  let comentario = '';
+  if (decision === 'RECHAZADO') {
+    comentario = prompt('Motivo del rechazo (se enviará al Gestor):') || '';
+  }
+  const res = await apiCall('resolverAprobacion', { codigo_proyecto: codigo, mes, decision, comentario });
+  if (!res.ok) { alert(res.error); return; }
+  cargarPendientes();
+}
+
+cargarMatriz();
+</script>
+</body>
+</html>
