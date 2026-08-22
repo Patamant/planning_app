@@ -70,6 +70,7 @@ const SECCIONES = [
   },
   {
     titulo: '3. Programación de la meta física (% por trimestre)',
+    tipo: 'porcentaje',
     campos: [
       'PROGRAMACIÓN DE LA META FÍSICA   % AVANCE I TRIMESTRE',
       'PROGRAMACIÓN DE LA META FÍSICA   % AVANCE II TRIMESTRE',
@@ -231,6 +232,63 @@ function renderCampo(codigo, headerBuscado, datos) {
   </div>`;
 }
 
+/** Igual que renderCampo, pero muestra y edita el valor como porcentaje legible (0-100)
+ *  en vez del valor crudo (fracción 0-1) que usa internamente el Google Sheet. */
+function renderCampoPorcentaje(codigo, headerBuscado, datos) {
+  const headerReal = buscarHeaderReal(datos, headerBuscado);
+  if (!headerReal) {
+    return `<div class="campo-item"><label>${headerBuscado}</label><span class="valor-vacio">— (columna no encontrada) —</span></div>`;
+  }
+  const campo = datos[headerReal];
+  const fieldId = fieldIdDe(headerReal);
+  const pct = porcentajeANumero(campo.valor);
+  if (campo.editable) {
+    return `<div class="campo-item">
+      <label>${headerBuscado}</label>
+      <div class="campo-input-row">
+        <input class="celda-editable" type="number" min="0" max="100" step="1" style="max-width:80px" id="${fieldId}" value="${pct}">
+        <span style="align-self:center;font-weight:600">%</span>
+        <button onclick="guardarCampoPorcentaje('${codigo.replace(/'/g,"\\'")}', '${headerReal.replace(/'/g,"\\'")}', '${fieldId}', this)">Guardar</button>
+      </div>
+    </div>`;
+  }
+  return `<div class="campo-item">
+    <label>${headerBuscado} <span class="badge SISTEMA">${campo.perfil_columna}</span></label>
+    <input class="celda-bloqueada" value="${pct}%" disabled>
+  </div>`;
+}
+
+/** Guarda un campo de porcentaje: el usuario ve/edita 0-100, pero se guarda como fracción 0-1. */
+async function guardarCampoPorcentaje(codigo, header, fieldId, boton) {
+  const inputEl = document.getElementById(fieldId);
+  const pctIngresado = parseFloat(inputEl.value);
+  if (isNaN(pctIngresado) || pctIngresado < 0 || pctIngresado > 100) {
+    alert('Ingresa un porcentaje válido entre 0 y 100.');
+    return;
+  }
+  const fraccion = pctIngresado / 100;
+  if (boton) { var textoOriginal = boton.textContent; boton.disabled = true; boton.textContent = 'Guardando...'; }
+  try {
+    const res = await apiCall('guardarCelda', { codigo_proyecto: codigo, header, valor: fraccion });
+    if (!res.ok) {
+      alert('No se pudo guardar: ' + res.error);
+      if (boton) { boton.disabled = false; boton.textContent = textoOriginal; }
+      return;
+    }
+    const fila = matrizData.filas.find(f => String(f.codigo_proyecto) === String(codigo));
+    if (fila && fila.datos[header]) fila.datos[header].valor = fraccion;
+    if (boton) {
+      boton.textContent = '✓ Guardado';
+      setTimeout(() => { boton.disabled = false; boton.textContent = textoOriginal; }, 1500);
+    }
+    cargarMatriz();
+  } catch (err) {
+    console.error('Error al guardar el porcentaje:', err);
+    alert('Ocurrió un error de conexión al guardar. Revisa la consola (F12) para más detalle.');
+    if (boton) { boton.disabled = false; boton.textContent = textoOriginal; }
+  }
+}
+
 /** Renderiza un bloque de 4 trimestres (3 meses + total del sistema cada uno) en formato compacto de tabla */
 function renderBloqueTrimestral(codigo, datos, trimestres, tituloExtra) {
   let html = '<table class="tabla-trimestral"><thead><tr>';
@@ -290,6 +348,8 @@ function verDetalle(codigo) {
     html += `<div class="seccion"><h4 class="seccion-titulo">${seccion.titulo}</h4><div class="seccion-cuerpo">`;
     if (seccion.trimestres) {
       html += renderBloqueTrimestral(codigo, datos, seccion.trimestres, seccion.extra);
+    } else if (seccion.tipo === 'porcentaje') {
+      seccion.campos.forEach(header => { html += renderCampoPorcentaje(codigo, header, datos); });
     } else {
       seccion.campos.forEach(header => { html += renderCampo(codigo, header, datos); });
     }
