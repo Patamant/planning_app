@@ -20,7 +20,7 @@
   <div class="tarjeta">
     <p>Estos son los proyectos a tu cargo. Ingresa el avance del mes correspondiente y envíalo a aprobación del Director.</p>
     <table>
-      <thead><tr><th>Código</th><th>Proyecto</th><th></th></tr></thead>
+      <thead><tr><th>Código</th><th>Proyecto</th><th>Avance Físico</th><th></th></tr></thead>
       <tbody id="tablaProyectos"></tbody>
     </table>
   </div>
@@ -46,6 +46,33 @@ function salir() { cerrarSesionLocal(); window.location.href = 'index.html'; }
 
 let matrizData = null;
 
+/** Convierte el valor crudo de AVANCE FÍSICO (número 0-1, texto "70,00%", etc.) a un entero 0-100. */
+function porcentajeANumero(valorCrudo) {
+  if (valorCrudo === null || valorCrudo === undefined || valorCrudo === '') return 0;
+  if (typeof valorCrudo === 'number') {
+    return valorCrudo <= 1 ? Math.round(valorCrudo * 100) : Math.round(valorCrudo);
+  }
+  const limpio = String(valorCrudo).replace('%', '').replace(',', '.').trim();
+  const num = parseFloat(limpio);
+  if (isNaN(num)) return 0;
+  return num <= 1 ? Math.round(num * 100) : Math.round(num);
+}
+
+function colorSemaforo(pct) {
+  if (pct < 40) return 'rojo';
+  if (pct < 75) return 'amarillo';
+  return 'verde';
+}
+
+function renderProgreso(valorCrudo) {
+  const pct = Math.max(0, Math.min(100, porcentajeANumero(valorCrudo)));
+  const color = colorSemaforo(pct);
+  return `<div class="progreso-wrap">
+    <div class="progreso-barra-contenedor"><div class="progreso-barra ${color}" style="width:${pct}%"></div></div>
+    <span class="progreso-texto ${color}">${pct}%</span>
+  </div>`;
+}
+
 async function cargarMatriz() {
   const res = await apiCall('obtenerMatriz', {});
   if (!res.ok) { alert(res.error); return; }
@@ -54,13 +81,15 @@ async function cargarMatriz() {
   tbody.innerHTML = '';
   res.filas.forEach(fila => {
     const proyecto = fila.datos['PROYECTO'] ? fila.datos['PROYECTO'].valor : '';
+    const avanceFisico = fila.datos['AVANCE FÍSICO'] ? fila.datos['AVANCE FÍSICO'].valor : 0;
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${fila.codigo_proyecto}</td><td>${proyecto}</td>
+      <td>${renderProgreso(avanceFisico)}</td>
       <td><button data-codigo="${fila.codigo_proyecto}" class="btn-ver-detalle">Ver / Ingresar avance</button></td>`;
     tbody.appendChild(tr);
   });
   if (!res.filas.length) {
-    tbody.innerHTML = '<tr><td colspan="3">No tienes proyectos asignados todavía. Contacta al Administrador.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4">No tienes proyectos asignados todavía. Contacta al Administrador.</td></tr>';
   }
 
   tbody.querySelectorAll('.btn-ver-detalle').forEach(btn => {
@@ -95,6 +124,7 @@ function verDetalle(codigo) {
 
   let html = `<div class="detalle-header">
     <h3>Proyecto ${codigo}${datos['PROYECTO'] ? ' — ' + datos['PROYECTO'].valor : ''}</h3>
+    ${datos['AVANCE FÍSICO'] ? renderProgreso(datos['AVANCE FÍSICO'].valor) : ''}
     <button class="secundario" onclick="cerrarDetalle()">Cerrar</button>
   </div>
   <p style="font-size:13px;color:#555">
@@ -118,7 +148,7 @@ function verDetalle(codigo) {
           <label>${nombreMes} <span class="badge PENDIENTE">pendiente de envío</span></label>
           <div class="campo-input-row">
             <input class="celda-editable" id="${fieldId}" value="${campo.valor}" placeholder="0%">
-            <button onclick="guardarCampo('${codigo.replace(/'/g,"\\'")}', '${header.replace(/'/g,"\\'")}', '${fieldId}')">Guardar</button>
+            <button onclick="guardarCampo('${codigo.replace(/'/g,"\\'")}', '${header.replace(/'/g,"\\'")}', '${fieldId}', this)">Guardar</button>
           </div>
           <button class="aprobar" style="margin-top:4px" onclick="enviarAprobacion('${codigo.replace(/'/g,"\\'")}', ${mesNum})">Enviar a aprobación</button>
         </div>`;
@@ -149,12 +179,29 @@ function cerrarDetalle() {
   document.getElementById('detalleProyecto').style.display = 'none';
 }
 
-async function guardarCampo(codigo, header, fieldId) {
+async function guardarCampo(codigo, header, fieldId, boton) {
   const valor = document.getElementById(fieldId).value;
-  const res = await apiCall('guardarCelda', { codigo_proyecto: codigo, header, valor });
-  if (!res.ok) { alert(res.error); return; }
-  await cargarMatriz();
-  verDetalle(codigo);
+  if (boton) { var textoOriginal = boton.textContent; boton.disabled = true; boton.textContent = 'Guardando...'; }
+  try {
+    const res = await apiCall('guardarCelda', { codigo_proyecto: codigo, header, valor });
+    if (!res.ok) {
+      alert('No se pudo guardar: ' + res.error);
+      if (boton) { boton.disabled = false; boton.textContent = textoOriginal; }
+      return;
+    }
+    const fila = matrizData.filas.find(f => String(f.codigo_proyecto) === String(codigo));
+    if (fila && fila.datos[header]) fila.datos[header].valor = valor;
+
+    if (boton) {
+      boton.textContent = '✓ Guardado';
+      setTimeout(() => { boton.disabled = false; boton.textContent = textoOriginal; }, 1500);
+    }
+    cargarMatriz();
+  } catch (err) {
+    console.error('Error al guardar la celda:', err);
+    alert('Ocurrió un error de conexión al guardar. Revisa la consola (F12) para más detalle.');
+    if (boton) { boton.disabled = false; boton.textContent = textoOriginal; }
+  }
 }
 
 async function enviarAprobacion(codigo, mes) {
