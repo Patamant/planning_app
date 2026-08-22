@@ -19,8 +19,11 @@
 <main>
   <div class="tabs">
     <button class="activo" onclick="mostrarTab('matriz')">Matriz de Proyectos</button>
-    <button onclick="mostrarTab('pendientes')">Pendientes de aprobación</button>
+    <button onclick="mostrarTab('pendientes')">Pendientes de aprobación <span id="badgePendientes" class="badge-contador" style="display:none"></span></button>
   </div>
+  <p style="font-size:12px;color:#666;margin-top:-8px">
+    Los avances que los Gestores envían para tu revisión aparecen en la pestaña "Pendientes de aprobación".
+  </p>
 
   <!-- ===== MATRIZ ===== -->
   <section id="tabMatriz">
@@ -277,6 +280,7 @@ async function guardarCampoPorcentaje(codigo, header, fieldId, boton) {
     }
     const fila = matrizData.filas.find(f => String(f.codigo_proyecto) === String(codigo));
     if (fila && fila.datos[header]) fila.datos[header].valor = fraccion;
+    if (res.debug) console.log('Guardado en Sheet:', res.debug);
     if (boton) {
       boton.textContent = '✓ Guardado';
       setTimeout(() => { boton.disabled = false; boton.textContent = textoOriginal; }, 1500);
@@ -377,6 +381,7 @@ async function guardarCampo(codigo, header, fieldId, boton) {
     // Actualiza el dato en memoria para no depender de un recargo completo
     const fila = matrizData.filas.find(f => String(f.codigo_proyecto) === String(codigo));
     if (fila && fila.datos[header]) fila.datos[header].valor = valor;
+    if (res.debug) console.log('Guardado en Sheet:', res.debug);
 
     if (boton) {
       boton.textContent = '✓ Guardado';
@@ -422,9 +427,22 @@ async function resolver(codigo, mes, decision) {
       'Motivo: ' + (res.notificacion ? res.notificacion.motivo : 'desconocido'));
   }
   cargarPendientes();
+  actualizarBadgePendientes();
+}
+
+async function actualizarBadgePendientes() {
+  const res = await apiCall('obtenerPendientesAprobacion', {});
+  const badge = document.getElementById('badgePendientes');
+  if (res.ok && res.pendientes.length > 0) {
+    badge.textContent = res.pendientes.length;
+    badge.style.display = 'inline-block';
+  } else {
+    badge.style.display = 'none';
+  }
 }
 
 cargarMatriz();
+actualizarBadgePendientes(); // se calcula al entrar, sin esperar a que hagan clic en la pestaña
 </script>
 </body>
 </html>
