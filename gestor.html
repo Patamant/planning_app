@@ -192,8 +192,9 @@ function verDetalle(codigo) {
     });
     const totalHeaderReal = buscarHeaderReal(datos, t.total);
     const campoTotal = totalHeaderReal ? datos[totalHeaderReal] : null;
+    const totalMostrado = campoTotal ? porcentajeANumero(campoTotal.valor) + '%' : '—';
     html += `<div class="campo-item"><label>Total del trimestre (calculado por el sistema)</label>
-      <input class="celda-bloqueada" value="${campoTotal ? campoTotal.valor : '—'}" disabled></div>`;
+      <input class="celda-bloqueada" value="${totalMostrado}" disabled></div>`;
     html += '</div></div>';
   });
 
@@ -201,7 +202,7 @@ function verDetalle(codigo) {
   const campoAvanceFisico = claveAvanceFisico ? datos[claveAvanceFisico] : null;
   if (campoAvanceFisico) {
     html += `<div class="seccion"><h4 class="seccion-titulo">Avance físico total (calculado por el sistema)</h4>
-      <div class="seccion-cuerpo"><input class="celda-bloqueada" value="${campoAvanceFisico.valor}" disabled></div></div>`;
+      <div class="seccion-cuerpo"><input class="celda-bloqueada" value="${porcentajeANumero(campoAvanceFisico.valor)}%" disabled></div></div>`;
   }
 
   cont.innerHTML = html;
