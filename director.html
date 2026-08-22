@@ -26,7 +26,7 @@
   <section id="tabMatriz">
     <div class="tarjeta">
       <table>
-        <thead><tr><th>Código</th><th>Proyecto</th><th>Unidad Administrativa</th><th></th></tr></thead>
+        <thead><tr><th>Código</th><th>Proyecto</th><th>Unidad Administrativa</th><th>Avance Físico</th><th></th></tr></thead>
         <tbody id="tablaProyectos"></tbody>
       </table>
     </div>
@@ -136,6 +136,34 @@ function mostrarTab(tab) {
 
 let matrizData = null;
 
+/** Convierte el valor crudo de AVANCE FÍSICO (número 0-1, texto "70,00%", etc.) a un entero 0-100. */
+function porcentajeANumero(valorCrudo) {
+  if (valorCrudo === null || valorCrudo === undefined || valorCrudo === '') return 0;
+  if (typeof valorCrudo === 'number') {
+    return valorCrudo <= 1 ? Math.round(valorCrudo * 100) : Math.round(valorCrudo);
+  }
+  const limpio = String(valorCrudo).replace('%', '').replace(',', '.').trim();
+  const num = parseFloat(limpio);
+  if (isNaN(num)) return 0;
+  return num <= 1 ? Math.round(num * 100) : Math.round(num);
+}
+
+function colorSemaforo(pct) {
+  if (pct < 40) return 'rojo';
+  if (pct < 75) return 'amarillo';
+  return 'verde';
+}
+
+/** Genera el HTML de la barra de progreso con semáforo, a partir del valor crudo de AVANCE FÍSICO. */
+function renderProgreso(valorCrudo) {
+  const pct = Math.max(0, Math.min(100, porcentajeANumero(valorCrudo)));
+  const color = colorSemaforo(pct);
+  return `<div class="progreso-wrap">
+    <div class="progreso-barra-contenedor"><div class="progreso-barra ${color}" style="width:${pct}%"></div></div>
+    <span class="progreso-texto ${color}">${pct}%</span>
+  </div>`;
+}
+
 async function cargarMatriz() {
   const res = await apiCall('obtenerMatriz', {});
   if (!res.ok) { alert(res.error); return; }
@@ -145,8 +173,10 @@ async function cargarMatriz() {
   res.filas.forEach(fila => {
     const proyecto = fila.datos['PROYECTO'] ? fila.datos['PROYECTO'].valor : '';
     const unidad = fila.datos['UNIDAD ADMINISTRATIVA'] ? fila.datos['UNIDAD ADMINISTRATIVA'].valor : '';
+    const avanceFisico = fila.datos['AVANCE FÍSICO'] ? fila.datos['AVANCE FÍSICO'].valor : 0;
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${fila.codigo_proyecto}</td><td>${proyecto}</td><td>${unidad}</td>
+      <td>${renderProgreso(avanceFisico)}</td>
       <td><button data-codigo="${fila.codigo_proyecto}" class="btn-ver-detalle">Ver / Editar</button></td>`;
     tbody.appendChild(tr);
   });
@@ -171,7 +201,7 @@ function renderCampo(codigo, header, campo) {
       <label>${header}</label>
       <div class="campo-input-row">
         <input class="celda-editable" id="${fieldId}" value="${campo.valor}">
-        <button onclick="guardarCampo('${codigo.replace(/'/g,"\\'")}', '${header.replace(/'/g,"\\'")}', '${fieldId}')">Guardar</button>
+        <button onclick="guardarCampo('${codigo.replace(/'/g,"\\'")}', '${header.replace(/'/g,"\\'")}', '${fieldId}', this)">Guardar</button>
       </div>
     </div>`;
   }
@@ -195,7 +225,7 @@ function renderBloqueTrimestral(codigo, datos, trimestres, tituloExtra) {
       const fieldId = fieldIdDe(mesHeader);
       if (campo.editable) {
         html += `<td><input class="celda-editable" style="width:70px" id="${fieldId}" value="${campo.valor}">
-          <button style="padding:3px 6px;font-size:11px;margin-top:2px" onclick="guardarCampo('${codigo.replace(/'/g,"\\'")}', '${mesHeader.replace(/'/g,"\\'")}', '${fieldId}')">💾</button></td>`;
+          <button style="padding:3px 6px;font-size:11px;margin-top:2px" onclick="guardarCampo('${codigo.replace(/'/g,"\\'")}', '${mesHeader.replace(/'/g,"\\'")}', '${fieldId}', this)">💾</button></td>`;
       } else {
         html += `<td><input class="celda-bloqueada" style="width:70px" value="${campo.valor}" disabled></td>`;
       }
@@ -228,6 +258,7 @@ function verDetalle(codigo) {
 
   let html = `<div class="detalle-header">
     <h3>Proyecto ${codigo}${datos['PROYECTO'] ? ' — ' + datos['PROYECTO'].valor : ''}</h3>
+    ${datos['AVANCE FÍSICO'] ? renderProgreso(datos['AVANCE FÍSICO'].valor) : ''}
     <button class="secundario" onclick="cerrarDetalle()">Cerrar</button>
   </div>`;
 
@@ -249,12 +280,30 @@ function cerrarDetalle() {
   document.getElementById('detalleProyecto').style.display = 'none';
 }
 
-async function guardarCampo(codigo, header, fieldId) {
+async function guardarCampo(codigo, header, fieldId, boton) {
   const valor = document.getElementById(fieldId).value;
-  const res = await apiCall('guardarCelda', { codigo_proyecto: codigo, header, valor });
-  if (!res.ok) { alert(res.error); return; }
-  await cargarMatriz();
-  verDetalle(codigo);
+  if (boton) { var textoOriginal = boton.textContent; boton.disabled = true; boton.textContent = 'Guardando...'; }
+  try {
+    const res = await apiCall('guardarCelda', { codigo_proyecto: codigo, header, valor });
+    if (!res.ok) {
+      alert('No se pudo guardar: ' + res.error);
+      if (boton) { boton.disabled = false; boton.textContent = textoOriginal; }
+      return;
+    }
+    // Actualiza el dato en memoria para no depender de un recargo completo
+    const fila = matrizData.filas.find(f => String(f.codigo_proyecto) === String(codigo));
+    if (fila && fila.datos[header]) fila.datos[header].valor = valor;
+
+    if (boton) {
+      boton.textContent = '✓ Guardado';
+      setTimeout(() => { boton.disabled = false; boton.textContent = textoOriginal; }, 1500);
+    }
+    cargarMatriz(); // refresca la tabla (avance físico, etc.) en segundo plano, sin bloquear la vista
+  } catch (err) {
+    console.error('Error al guardar la celda:', err);
+    alert('Ocurrió un error de conexión al guardar. Revisa la consola (F12) para más detalle.');
+    if (boton) { boton.disabled = false; boton.textContent = textoOriginal; }
+  }
 }
 
 async function cargarPendientes() {
