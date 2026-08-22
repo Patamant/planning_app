@@ -414,6 +414,13 @@ async function resolver(codigo, mes, decision) {
   }
   const res = await apiCall('resolverAprobacion', { codigo_proyecto: codigo, mes, decision, comentario });
   if (!res.ok) { alert(res.error); return; }
+
+  if (res.notificacion && res.notificacion.enviados > 0) {
+    alert('Decisión registrada. Se notificó por correo al Gestor.');
+  } else {
+    alert('La decisión se registró correctamente, PERO el correo de aviso al Gestor no se pudo enviar.\n\n' +
+      'Motivo: ' + (res.notificacion ? res.notificacion.motivo : 'desconocido'));
+  }
   cargarPendientes();
 }
 
