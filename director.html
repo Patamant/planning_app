@@ -80,7 +80,7 @@ async function cargarMatriz() {
 }
 
 function verDetalle(codigo) {
-  const fila = matrizData.filas.find(f => f.codigo_proyecto === codigo);
+  const fila = matrizData.filas.find(f => String(f.codigo_proyecto) === String(codigo));
   if (!fila) return;
   const cont = document.getElementById('detalleProyecto');
   cont.style.display = 'block';
