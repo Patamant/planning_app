@@ -35,6 +35,13 @@ document.getElementById('nombreUsuario').textContent = sessionStorage.getItem('n
 
 const MESES = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
 
+const TRIMESTRES_GESTOR = [
+  { meses: ['E-ENERO', 'E-FEBRERO', 'E-MARZO'], total: 'TRIMESTRE 1', numeros: [1, 2, 3] },
+  { meses: ['E-ABRIL', 'E-MAYO', 'E-JUNIO'], total: 'TRIMESTRE 2', numeros: [4, 5, 6] },
+  { meses: ['E- JULIO', 'E-AGOSTO', 'E-SEPTIEMBRE'], total: 'TRIMESTRE 3', numeros: [7, 8, 9] },
+  { meses: ['E-OCTUBRE', 'E-NOVIEMBRE', 'E-DICIEMBRE'], total: 'TRIMESTRE 3', numeros: [10, 11, 12] }
+];
+
 function salir() { cerrarSesionLocal(); window.location.href = 'index.html'; }
 
 let matrizData = null;
@@ -61,11 +68,16 @@ async function cargarMatriz() {
   });
 }
 
-function mesDeHeader(header) {
-  for (let i = 0; i < MESES.length; i++) {
-    if (header.toUpperCase().indexOf(MESES[i]) !== -1) return i + 1;
-  }
-  return null;
+function fieldIdDe(header) {
+  return 'campo_' + header.replace(/[^a-zA-Z0-9]/g, '_');
+}
+
+function estadoDeCampo(campo) {
+  // El backend no manda el estado textual directamente, lo inferimos:
+  // si no es editable y su perfil es Gestor, está aprobado (bloqueado).
+  if (!campo) return null;
+  if (campo.editable) return null; // pendiente o rechazado (se puede editar igual)
+  return 'APROBADO';
 }
 
 function verDetalle(codigo) {
@@ -77,34 +89,64 @@ function verDetalle(codigo) {
       '. Códigos disponibles:', matrizData.filas.map(f => f.codigo_proyecto));
     return;
   }
+  const datos = fila.datos;
   const cont = document.getElementById('detalleProyecto');
   cont.style.display = 'block';
-  cont.innerHTML = `<h3>Proyecto: ${codigo}</h3><div id="camposDetalle"></div>`;
-  const camposDiv = document.getElementById('camposDetalle');
 
-  Object.keys(fila.datos).forEach(header => {
-    const campo = fila.datos[header];
-    if (campo.perfil_columna !== 'Gestor de Objetivos') return; // el Gestor solo ve/edita sus columnas
+  let html = `<div class="detalle-header">
+    <h3>Proyecto ${codigo}${datos['PROYECTO'] ? ' — ' + datos['PROYECTO'].valor : ''}</h3>
+    <button class="secundario" onclick="cerrarDetalle()">Cerrar</button>
+  </div>
+  <p style="font-size:13px;color:#555">
+    Ingresa el % de avance físico del mes correspondiente y presiona "Guardar". Cuando el dato esté listo,
+    presiona "Enviar" para que el Director de Planificación lo apruebe. Los meses ya aprobados quedan bloqueados.
+  </p>`;
 
-    const mes = mesDeHeader(header);
-    const fieldId = 'campo_' + header.replace(/[^a-zA-Z0-9]/g, '_');
-    const row = document.createElement('div');
-    row.style.marginBottom = '10px';
-
-    let inputHtml;
-    if (campo.editable) {
-      inputHtml = `<input class="celda-editable" id="${fieldId}" value="${campo.valor}">
-        <button onclick="guardarCampo('${codigo}', '${header.replace(/'/g,"\\'")}', '${fieldId}')">Guardar</button>`;
-      if (mes) {
-        inputHtml += ` <button class="aprobar" onclick="enviarAprobacion('${codigo}', ${mes})">Enviar a aprobación</button>`;
+  TRIMESTRES_GESTOR.forEach((t, idxTrimestre) => {
+    html += `<div class="seccion"><h4 class="seccion-titulo">Trimestre ${idxTrimestre + 1}</h4><div class="seccion-cuerpo" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));">`;
+    t.meses.forEach((header, i) => {
+      const campo = datos[header];
+      const mesNum = t.numeros[i];
+      const fieldId = fieldIdDe(header);
+      const nombreMes = header.replace(/^E-\s*/, '');
+      if (!campo) {
+        html += `<div class="campo-item"><label>${nombreMes}</label><span class="valor-vacio">— sin datos —</span></div>`;
+        return;
       }
-    } else {
-      inputHtml = `<input class="celda-bloqueada" value="${campo.valor}" disabled> <span class="badge APROBADO">Aprobado - bloqueado</span>`;
-    }
-
-    row.innerHTML = `<label><b>${header}</b></label><br>${inputHtml}`;
-    camposDiv.appendChild(row);
+      if (campo.editable) {
+        html += `<div class="campo-item">
+          <label>${nombreMes} <span class="badge PENDIENTE">pendiente de envío</span></label>
+          <div class="campo-input-row">
+            <input class="celda-editable" id="${fieldId}" value="${campo.valor}" placeholder="0%">
+            <button onclick="guardarCampo('${codigo.replace(/'/g,"\\'")}', '${header.replace(/'/g,"\\'")}', '${fieldId}')">Guardar</button>
+          </div>
+          <button class="aprobar" style="margin-top:4px" onclick="enviarAprobacion('${codigo.replace(/'/g,"\\'")}', ${mesNum})">Enviar a aprobación</button>
+        </div>`;
+      } else {
+        html += `<div class="campo-item">
+          <label>${nombreMes} <span class="badge APROBADO">Aprobado</span></label>
+          <input class="celda-bloqueada" value="${campo.valor}" disabled>
+        </div>`;
+      }
+    });
+    const campoTotal = datos[t.total];
+    html += `<div class="campo-item"><label>Total del trimestre (calculado por el sistema)</label>
+      <input class="celda-bloqueada" value="${campoTotal ? campoTotal.valor : '—'}" disabled></div>`;
+    html += '</div></div>';
   });
+
+  const campoAvanceFisico = datos['AVANCE FÍSICO'];
+  if (campoAvanceFisico) {
+    html += `<div class="seccion"><h4 class="seccion-titulo">Avance físico total (calculado por el sistema)</h4>
+      <div class="seccion-cuerpo"><input class="celda-bloqueada" value="${campoAvanceFisico.valor}" disabled></div></div>`;
+  }
+
+  cont.innerHTML = html;
+  cont.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function cerrarDetalle() {
+  document.getElementById('detalleProyecto').style.display = 'none';
 }
 
 async function guardarCampo(codigo, header, fieldId) {
