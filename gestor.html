@@ -49,12 +49,16 @@ async function cargarMatriz() {
     const proyecto = fila.datos['PROYECTO'] ? fila.datos['PROYECTO'].valor : '';
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${fila.codigo_proyecto}</td><td>${proyecto}</td>
-      <td><button onclick="verDetalle('${fila.codigo_proyecto}')">Ver / Ingresar avance</button></td>`;
+      <td><button data-codigo="${fila.codigo_proyecto}" class="btn-ver-detalle">Ver / Ingresar avance</button></td>`;
     tbody.appendChild(tr);
   });
   if (!res.filas.length) {
     tbody.innerHTML = '<tr><td colspan="3">No tienes proyectos asignados todavía. Contacta al Administrador.</td></tr>';
   }
+
+  tbody.querySelectorAll('.btn-ver-detalle').forEach(btn => {
+    btn.addEventListener('click', () => verDetalle(btn.dataset.codigo));
+  });
 }
 
 function mesDeHeader(header) {
@@ -65,8 +69,14 @@ function mesDeHeader(header) {
 }
 
 function verDetalle(codigo) {
-  const fila = matrizData.filas.find(f => String(f.codigo_proyecto) === String(codigo));
-  if (!fila) return;
+  console.log('verDetalle llamado con codigo:', codigo);
+  if (!matrizData) { console.warn('matrizData aún no está cargado.'); return; }
+  const fila = matrizData.filas.find(f => String(f.codigo_proyecto).trim() === String(codigo).trim());
+  if (!fila) {
+    console.warn('No se encontró ninguna fila con codigo_proyecto =', codigo,
+      '. Códigos disponibles:', matrizData.filas.map(f => f.codigo_proyecto));
+    return;
+  }
   const cont = document.getElementById('detalleProyecto');
   cont.style.display = 'block';
   cont.innerHTML = `<h3>Proyecto: ${codigo}</h3><div id="camposDetalle"></div>`;
