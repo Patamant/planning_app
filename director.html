@@ -51,6 +51,79 @@ document.getElementById('nombreUsuario').textContent = sessionStorage.getItem('n
 
 const MESES = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
 
+// Estructura de secciones, en el orden en que deben presentarse.
+// Los grupos "trimestral" se renderizan como una fila compacta de 3 meses + el total del sistema.
+const SECCIONES = [
+  {
+    titulo: '1. Identificación del proyecto',
+    campos: ['PROYECTO', 'UNIDAD ADMINISTRATIVA', 'ACTIVIDAD', 'BENEFICIARIOS DEL PROYECTO', 'INDICADOR', 'META FÍSICA']
+  },
+  {
+    titulo: '2. Marco estratégico (PDOT / PEI)',
+    campos: [
+      'OBJETIVO DE DESARROLLO SOSTENIBLE', 'OBJETIVO PLAN NACIONAL DE DESARROLLO',
+      'SISTEMA PLAN DE DESARROLLO Y ORDENAMIENTO TERRITORIAL', 'OBJETIVO PLAN DE ORDENAMIENTO TERRITORIAL',
+      'COMPETENCIA', 'OBJETIVO DE GESTIÓN PLAN DE DESARROLLO Y ORDENAMIENTO TERRITORIAL',
+      'POLÍTICA PDOT', 'META PDOT', 'INDICADOR PDOT', 'PROGRAMA PDOT', 'BENEFICIARIOS DEL PROGRAMA',
+      'PROYECTO PDOT', 'OBJETIVO PLAN ESTRATÉGICO INSTITUCIONAL PEI', 'OBJETIVO OPERATIVO PEI'
+    ]
+  },
+  {
+    titulo: '3. Programación de la meta física (% por trimestre)',
+    campos: [
+      'PROGRAMACIÓN DE LA META FÍSICA   % AVANCE I TRIMESTRE',
+      'PROGRAMACIÓN DE LA META FÍSICA   % AVANCE II TRIMESTRE',
+      'PROGRAMACIÓN DE LA META FÍSICA   % AVANCE III TRIMESTRE',
+      'PROGRAMACIÓN DE LA META FÍSICA% AVANCE IV TRIMESTRE',
+      'PROGRAMACIÓN DE LA META FÍSICA   TOTAL'
+    ]
+  },
+  {
+    titulo: '4. Presupuesto y programación presupuestaria',
+    campos: [
+      'ÍTEM PRESUPUESTARIO', 'FUENTE DE FINANCIAMIENTO', 'PRESPUESTO PARTICIPATIVO    (SI - NO)',
+      'GRUPOS DE ATENCIÓN PRIORITARIA   (SI/No)', 'PRESUPUESTO CODIFICADO', 'REFORMA', 'CODIFICADO FINAL',
+      'PROGRAMACIÓN EJECUCIÓN PRESUPUESTARIA    TRIMESTRE', 'PROGRAMACIÓN EJECUCIÓN PRESUPUESTARIA   II TRIMESTRE',
+      'PROGRAMACIÓN EJECUCIÓN PRESUPUESTARIA   III TRIMESTRE', 'PROGRAMACIÓN EJECUCIÓN PRESUPUESTARIA   IV TRIMESTRE',
+      'PROGRAMACIÓN EJECUCIÓN PRESUPUESTARIA TOTAL PRESUPUESTO',
+      'P PRESUPUESTARIA PAC', 'VALOR PAC', 'CUATRIMESTRE PAC', 'PROCEDIMIENTO PAC',
+      'CODIFICADO', 'REFORMADO', 'DEVENGADO', 'PAGADO'
+    ]
+  },
+  {
+    titulo: '5. Ejecución mensual - avance físico (a cargo del Gestor de Objetivos)',
+    trimestres: [
+      { meses: ['E-ENERO', 'E-FEBRERO', 'E-MARZO'], total: 'TRIMESTRE 1' },
+      { meses: ['E-ABRIL', 'E-MAYO', 'E-JUNIO'], total: 'TRIMESTRE 2' },
+      { meses: ['E- JULIO', 'E-AGOSTO', 'E-SEPTIEMBRE'], total: 'TRIMESTRE 3' },
+      { meses: ['E-OCTUBRE', 'E-NOVIEMBRE', 'E-DICIEMBRE'], total: 'TRIMESTRE 3' }
+    ],
+    extra: ['AVANCE FÍSICO']
+  },
+  {
+    titulo: '6. Ejecución mensual - pagado',
+    trimestres: [
+      { meses: ['ENERO', 'FEBRERO', 'MARZO'], total: 'PAGADO TRIMESTRE 1' },
+      { meses: ['ABRIL', 'MAYO', 'JUNIO'], total: 'PAGADO TRIMESTRE 2' },
+      { meses: ['JULIO', 'AGOSTO', 'SEPTIEMBRE'], total: 'PAGADO TRIMESTRE 3' },
+      { meses: ['OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'], total: 'PAGADO TRIMESTRE 4' }
+    ],
+    extra: ['PAGADO']
+  },
+  {
+    titulo: '7. Indicadores de gestión (calculados por el sistema)',
+    campos: [
+      'INDICADOR DE EFICIENCIA', 'INDICADOR DE EFICACIA', 'INDICADOR DE EFECTIVIDAD',
+      'INDICADOR DE CUMPLIMIENTO DE CRONOGRAMA (1 er TRIMESTRE)',
+      'INDICADOR DE CUMPLIMIENTO DE CRONOGRAMA ( 2do TRIMESTRE)'
+    ]
+  },
+  {
+    titulo: '8. Observaciones',
+    campos: ['OBSERVACIONES']
+  }
+];
+
 function salir() { cerrarSesionLocal(); window.location.href = 'index.html'; }
 
 function mostrarTab(tab) {
@@ -85,6 +158,61 @@ async function cargarMatriz() {
   });
 }
 
+function fieldIdDe(header) {
+  return 'campo_' + header.replace(/[^a-zA-Z0-9]/g, '_');
+}
+
+/** Renderiza un campo individual (label + input o valor bloqueado + botón Guardar si aplica) */
+function renderCampo(codigo, header, campo) {
+  if (!campo) return `<div class="campo-item"><label>${header}</label><span class="valor-vacio">— (columna no encontrada) —</span></div>`;
+  const fieldId = fieldIdDe(header);
+  if (campo.editable) {
+    return `<div class="campo-item">
+      <label>${header}</label>
+      <div class="campo-input-row">
+        <input class="celda-editable" id="${fieldId}" value="${campo.valor}">
+        <button onclick="guardarCampo('${codigo.replace(/'/g,"\\'")}', '${header.replace(/'/g,"\\'")}', '${fieldId}')">Guardar</button>
+      </div>
+    </div>`;
+  }
+  return `<div class="campo-item">
+    <label>${header} <span class="badge SISTEMA">${campo.perfil_columna}</span></label>
+    <input class="celda-bloqueada" value="${campo.valor}" disabled>
+  </div>`;
+}
+
+/** Renderiza un bloque de 4 trimestres (3 meses + total del sistema cada uno) en formato compacto de tabla */
+function renderBloqueTrimestral(codigo, datos, trimestres, tituloExtra) {
+  let html = '<table class="tabla-trimestral"><thead><tr>';
+  trimestres.forEach((t, i) => { html += `<th colspan="3">Trimestre ${i + 1}</th>`; });
+  html += '</tr><tr>';
+  trimestres.forEach(t => { t.meses.forEach(m => { html += `<th>${m.replace(/^E-\s*/, '')}</th>`; }); });
+  html += '</tr></thead><tbody><tr>';
+  trimestres.forEach(t => {
+    t.meses.forEach(mesHeader => {
+      const campo = datos[mesHeader];
+      if (!campo) { html += '<td>—</td>'; return; }
+      const fieldId = fieldIdDe(mesHeader);
+      if (campo.editable) {
+        html += `<td><input class="celda-editable" style="width:70px" id="${fieldId}" value="${campo.valor}">
+          <button style="padding:3px 6px;font-size:11px;margin-top:2px" onclick="guardarCampo('${codigo.replace(/'/g,"\\'")}', '${mesHeader.replace(/'/g,"\\'")}', '${fieldId}')">💾</button></td>`;
+      } else {
+        html += `<td><input class="celda-bloqueada" style="width:70px" value="${campo.valor}" disabled></td>`;
+      }
+    });
+  });
+  html += '</tr><tr>';
+  trimestres.forEach(t => {
+    const campoTotal = datos[t.total];
+    html += `<td colspan="3" class="celda-total-sistema">Total trimestre: <b>${campoTotal ? campoTotal.valor : '—'}</b></td>`;
+  });
+  html += '</tr></tbody></table>';
+  if (tituloExtra && tituloExtra.length) {
+    tituloExtra.forEach(header => { html += renderCampo(codigo, header, datos[header]); });
+  }
+  return html;
+}
+
 function verDetalle(codigo) {
   console.log('verDetalle llamado con codigo:', codigo);
   if (!matrizData) { console.warn('matrizData aún no está cargado.'); return; }
@@ -94,27 +222,31 @@ function verDetalle(codigo) {
       '. Códigos disponibles:', matrizData.filas.map(f => f.codigo_proyecto));
     return;
   }
+  const datos = fila.datos;
   const cont = document.getElementById('detalleProyecto');
   cont.style.display = 'block';
-  cont.innerHTML = `<h3>Proyecto: ${codigo}</h3><div id="camposDetalle"></div>`;
-  const camposDiv = document.getElementById('camposDetalle');
 
-  Object.keys(fila.datos).forEach(header => {
-    const campo = fila.datos[header];
-    if (header === 'CÓDIGO DEL PROYECTO (ASIGNADO POR DIRECCIÓN)') return;
-    const fieldId = 'campo_' + header.replace(/[^a-zA-Z0-9]/g, '_');
-    const row = document.createElement('div');
-    row.style.marginBottom = '8px';
-    if (campo.editable) {
-      row.innerHTML = `<label><b>${header}</b></label><br>
-        <input class="celda-editable" style="width:400px" id="${fieldId}" value="${campo.valor}">
-        <button onclick="guardarCampo('${codigo}', '${header.replace(/'/g,"\\'")}', '${fieldId}')">Guardar</button>`;
+  let html = `<div class="detalle-header">
+    <h3>Proyecto ${codigo}${datos['PROYECTO'] ? ' — ' + datos['PROYECTO'].valor : ''}</h3>
+    <button class="secundario" onclick="cerrarDetalle()">Cerrar</button>
+  </div>`;
+
+  SECCIONES.forEach(seccion => {
+    html += `<div class="seccion"><h4 class="seccion-titulo">${seccion.titulo}</h4><div class="seccion-cuerpo">`;
+    if (seccion.trimestres) {
+      html += renderBloqueTrimestral(codigo, datos, seccion.trimestres, seccion.extra);
     } else {
-      row.innerHTML = `<label><b>${header}</b> <small>(${campo.perfil_columna})</small></label><br>
-        <input class="celda-bloqueada" style="width:400px" value="${campo.valor}" disabled>`;
+      seccion.campos.forEach(header => { html += renderCampo(codigo, header, datos[header]); });
     }
-    camposDiv.appendChild(row);
+    html += '</div></div>';
   });
+
+  cont.innerHTML = html;
+  cont.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function cerrarDetalle() {
+  document.getElementById('detalleProyecto').style.display = 'none';
 }
 
 async function guardarCampo(codigo, header, fieldId) {
