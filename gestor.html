@@ -80,8 +80,10 @@ async function cargarMatriz() {
   const tbody = document.getElementById('tablaProyectos');
   tbody.innerHTML = '';
   res.filas.forEach(fila => {
-    const proyecto = fila.datos['PROYECTO'] ? fila.datos['PROYECTO'].valor : '';
-    const avanceFisico = fila.datos['AVANCE FÍSICO'] ? fila.datos['AVANCE FÍSICO'].valor : 0;
+    const claveProyecto = buscarHeaderReal(fila.datos, 'PROYECTO');
+    const claveAvance = buscarHeaderReal(fila.datos, 'AVANCE FÍSICO');
+    const proyecto = claveProyecto ? fila.datos[claveProyecto].valor : '';
+    const avanceFisico = claveAvance ? fila.datos[claveAvance].valor : 0;
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${fila.codigo_proyecto}</td><td>${proyecto}</td>
       <td>${renderProgreso(avanceFisico)}</td>
@@ -99,6 +101,19 @@ async function cargarMatriz() {
 
 function fieldIdDe(header) {
   return 'campo_' + header.replace(/[^a-zA-Z0-9]/g, '_');
+}
+
+/** Colapsa espacios/saltos de línea y normaliza mayúsculas, para comparar encabezados
+ *  sin que fallen por espacios invisibles provenientes del Google Sheet original. */
+function normalizarHeader(h) {
+  return String(h || '').replace(/\s+/g, ' ').trim().toUpperCase();
+}
+
+/** Busca en "datos" la clave real (tal como llegó del backend) que corresponde
+ *  al encabezado que buscamos, ignorando diferencias de espacios en blanco. */
+function buscarHeaderReal(datos, headerBuscado) {
+  const objetivo = normalizarHeader(headerBuscado);
+  return Object.keys(datos).find(k => normalizarHeader(k) === objetivo) || null;
 }
 
 function estadoDeCampo(campo) {
@@ -122,9 +137,11 @@ function verDetalle(codigo) {
   const cont = document.getElementById('detalleProyecto');
   cont.style.display = 'block';
 
+  const claveProyectoDet = buscarHeaderReal(datos, 'PROYECTO');
+  const claveAvanceDet = buscarHeaderReal(datos, 'AVANCE FÍSICO');
   let html = `<div class="detalle-header">
-    <h3>Proyecto ${codigo}${datos['PROYECTO'] ? ' — ' + datos['PROYECTO'].valor : ''}</h3>
-    ${datos['AVANCE FÍSICO'] ? renderProgreso(datos['AVANCE FÍSICO'].valor) : ''}
+    <h3>Proyecto ${codigo}${claveProyectoDet ? ' — ' + datos[claveProyectoDet].valor : ''}</h3>
+    ${claveAvanceDet ? renderProgreso(datos[claveAvanceDet].valor) : ''}
     <button class="secundario" onclick="cerrarDetalle()">Cerrar</button>
   </div>
   <p style="font-size:13px;color:#555">
@@ -134,21 +151,22 @@ function verDetalle(codigo) {
 
   TRIMESTRES_GESTOR.forEach((t, idxTrimestre) => {
     html += `<div class="seccion"><h4 class="seccion-titulo">Trimestre ${idxTrimestre + 1}</h4><div class="seccion-cuerpo" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));">`;
-    t.meses.forEach((header, i) => {
-      const campo = datos[header];
+    t.meses.forEach((headerBuscado, i) => {
+      const headerReal = buscarHeaderReal(datos, headerBuscado);
       const mesNum = t.numeros[i];
-      const fieldId = fieldIdDe(header);
-      const nombreMes = header.replace(/^E-\s*/, '');
-      if (!campo) {
-        html += `<div class="campo-item"><label>${nombreMes}</label><span class="valor-vacio">— sin datos —</span></div>`;
+      const nombreMes = headerBuscado.replace(/^E-\s*/, '');
+      if (!headerReal) {
+        html += `<div class="campo-item"><label>${nombreMes}</label><span class="valor-vacio">— (columna no encontrada) —</span></div>`;
         return;
       }
+      const campo = datos[headerReal];
+      const fieldId = fieldIdDe(headerReal);
       if (campo.editable) {
         html += `<div class="campo-item">
           <label>${nombreMes} <span class="badge PENDIENTE">pendiente de envío</span></label>
           <div class="campo-input-row">
             <input class="celda-editable" id="${fieldId}" value="${campo.valor}" placeholder="0%">
-            <button onclick="guardarCampo('${codigo.replace(/'/g,"\\'")}', '${header.replace(/'/g,"\\'")}', '${fieldId}', this)">Guardar</button>
+            <button onclick="guardarCampo('${codigo.replace(/'/g,"\\'")}', '${headerReal.replace(/'/g,"\\'")}', '${fieldId}', this)">Guardar</button>
           </div>
           <button class="aprobar" style="margin-top:4px" onclick="enviarAprobacion('${codigo.replace(/'/g,"\\'")}', ${mesNum})">Enviar a aprobación</button>
         </div>`;
@@ -159,13 +177,15 @@ function verDetalle(codigo) {
         </div>`;
       }
     });
-    const campoTotal = datos[t.total];
+    const totalHeaderReal = buscarHeaderReal(datos, t.total);
+    const campoTotal = totalHeaderReal ? datos[totalHeaderReal] : null;
     html += `<div class="campo-item"><label>Total del trimestre (calculado por el sistema)</label>
       <input class="celda-bloqueada" value="${campoTotal ? campoTotal.valor : '—'}" disabled></div>`;
     html += '</div></div>';
   });
 
-  const campoAvanceFisico = datos['AVANCE FÍSICO'];
+  const claveAvanceFisico = buscarHeaderReal(datos, 'AVANCE FÍSICO');
+  const campoAvanceFisico = claveAvanceFisico ? datos[claveAvanceFisico] : null;
   if (campoAvanceFisico) {
     html += `<div class="seccion"><h4 class="seccion-titulo">Avance físico total (calculado por el sistema)</h4>
       <div class="seccion-cuerpo"><input class="celda-bloqueada" value="${campoAvanceFisico.valor}" disabled></div></div>`;
