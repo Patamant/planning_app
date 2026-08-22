@@ -222,6 +222,7 @@ async function guardarCampo(codigo, header, fieldId, boton) {
     }
     const fila = matrizData.filas.find(f => String(f.codigo_proyecto) === String(codigo));
     if (fila && fila.datos[header]) fila.datos[header].valor = valor;
+    if (res.debug) console.log('Guardado en Sheet:', res.debug);
 
     if (boton) {
       boton.textContent = '✓ Guardado';
