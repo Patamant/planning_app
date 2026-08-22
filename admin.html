@@ -50,10 +50,17 @@
   <section id="tabMapeo" class="tarjeta" style="display:none">
     <h3>Asignar Unidad Administrativa a un Gestor de Objetivos</h3>
     <form id="formMapeo">
-      <input type="text" id="m_unidad" placeholder="Unidad Administrativa (texto exacto de la MATRIZ)" style="width:340px" required>
-      <input type="text" id="m_usuario" placeholder="usuario del Gestor" required>
+      <label style="display:block;font-size:12px;margin-bottom:2px">Unidad Administrativa (existentes en la MATRIZ)</label>
+      <select id="m_unidad" style="min-width:340px" required>
+        <option value="">Selecciona una unidad...</option>
+      </select>
+      <label style="display:block;font-size:12px;margin:8px 0 2px">Usuario Gestor (perfil "Gestor de Objetivos" sin asignar)</label>
+      <select id="m_usuario" style="min-width:260px" required>
+        <option value="">Selecciona un gestor...</option>
+      </select>
       <button type="submit">Asignar</button>
     </form>
+    <div class="error" id="errorMapeo"></div>
 
     <h3>Mapeos actuales</h3>
     <table>
@@ -76,7 +83,7 @@ function mostrarTab(tab) {
   document.getElementById('tabMapeo').style.display = tab === 'mapeo' ? 'block' : 'none';
   document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('activo'));
   event.target.classList.add('activo');
-  if (tab === 'mapeo') cargarMapeos();
+  if (tab === 'mapeo') cargarPestanaMapeo();
 }
 
 async function cargarUsuarios() {
@@ -127,21 +134,68 @@ async function cargarMapeos() {
       <td><button class="rechazar" onclick="eliminarMapeo('${m.unidad_administrativa}','${m.usuario_gestor}')">Quitar</button></td>`;
     tbody.appendChild(tr);
   });
+  return res.mapeos;
+}
+
+/** Carga los tres datos que necesita la pestaña de Mapeo: unidades de la matriz,
+ *  usuarios con perfil Gestor de Objetivos que aún no están asignados, y los mapeos existentes. */
+async function cargarPestanaMapeo() {
+  const [resUnidades, resUsuarios, mapeosActuales] = await Promise.all([
+    apiCall('obtenerUnidadesAdministrativas', {}),
+    apiCall('listarUsuarios', {}),
+    cargarMapeos()
+  ]);
+
+  const selectUnidad = document.getElementById('m_unidad');
+  selectUnidad.innerHTML = '<option value="">Selecciona una unidad...</option>';
+  if (resUnidades.ok) {
+    resUnidades.unidades.forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u; opt.textContent = u;
+      selectUnidad.appendChild(opt);
+    });
+  }
+
+  const selectUsuario = document.getElementById('m_usuario');
+  selectUsuario.innerHTML = '<option value="">Selecciona un gestor...</option>';
+  if (resUsuarios.ok) {
+    const usuariosYaAsignados = new Set((mapeosActuales || []).map(m => m.usuario_gestor.toLowerCase()));
+    const gestoresDisponibles = resUsuarios.usuarios.filter(u =>
+      u.perfil === 'Gestor de Objetivos' && u.estado === 'ACTIVO' && !usuariosYaAsignados.has(u.usuario.toLowerCase())
+    );
+    if (!gestoresDisponibles.length) {
+      const opt = document.createElement('option');
+      opt.value = ''; opt.textContent = 'No hay gestores sin asignar';
+      selectUsuario.appendChild(opt);
+    } else {
+      gestoresDisponibles.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.usuario;
+        opt.textContent = u.usuario + (u.nombre ? ' — ' + u.nombre : '');
+        selectUsuario.appendChild(opt);
+      });
+    }
+  }
 }
 
 async function eliminarMapeo(unidad, usuario) {
   await apiCall('eliminarMapeo', { unidad, usuario_gestor: usuario });
-  cargarMapeos();
+  cargarPestanaMapeo(); // recarga todo: el usuario liberado vuelve a aparecer como disponible
 }
 
 document.getElementById('formMapeo').addEventListener('submit', async (ev) => {
   ev.preventDefault();
-  await apiCall('crearMapeo', {
-    unidad: document.getElementById('m_unidad').value.trim(),
-    usuario_gestor: document.getElementById('m_usuario').value.trim()
-  });
+  const errorDiv = document.getElementById('errorMapeo');
+  errorDiv.textContent = '';
+  const unidad = document.getElementById('m_unidad').value;
+  const usuarioGestor = document.getElementById('m_usuario').value;
+  if (!unidad || !usuarioGestor) {
+    errorDiv.textContent = 'Selecciona una unidad y un gestor.';
+    return;
+  }
+  await apiCall('crearMapeo', { unidad, usuario_gestor: usuarioGestor });
   document.getElementById('formMapeo').reset();
-  cargarMapeos();
+  cargarPestanaMapeo();
 });
 
 cargarUsuarios();
