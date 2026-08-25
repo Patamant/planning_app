@@ -28,10 +28,12 @@
   <!-- ===== MATRIZ ===== -->
   <section id="tabMatriz">
     <div class="tarjeta">
+      <div class="tabla-scroll">
       <table>
         <thead><tr><th>Código</th><th>Proyecto</th><th>Unidad Administrativa</th><th>Avance Físico</th><th></th></tr></thead>
         <tbody id="tablaProyectos"></tbody>
       </table>
+      </div>
     </div>
     <div class="tarjeta" id="detalleProyecto" style="display:none"></div>
   </section>
@@ -59,10 +61,12 @@ const MESES = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO'
 const SECCIONES = [
   {
     titulo: '1. Identificación del proyecto',
+    corto: '1. Identificación',
     campos: ['PROYECTO', 'UNIDAD ADMINISTRATIVA', 'ACTIVIDAD', 'BENEFICIARIOS DEL PROYECTO', 'INDICADOR', 'META FÍSICA']
   },
   {
     titulo: '2. Marco estratégico (PDOT / PEI)',
+    corto: '2. Marco estratégico',
     campos: [
       'OBJETIVO DE DESARROLLO SOSTENIBLE', 'OBJETIVO PLAN NACIONAL DE DESARROLLO',
       'SISTEMA PLAN DE DESARROLLO Y ORDENAMIENTO TERRITORIAL', 'OBJETIVO PLAN DE ORDENAMIENTO TERRITORIAL',
@@ -73,6 +77,7 @@ const SECCIONES = [
   },
   {
     titulo: '3. Programación de la meta física (% por trimestre)',
+    corto: '3. Meta física %',
     tipo: 'porcentaje',
     campos: [
       'PROGRAMACIÓN DE LA META FÍSICA   % AVANCE I TRIMESTRE',
@@ -84,6 +89,7 @@ const SECCIONES = [
   },
   {
     titulo: '4. Presupuesto y programación presupuestaria',
+    corto: '4. Presupuesto',
     campos: [
       'ÍTEM PRESUPUESTARIO', 'FUENTE DE FINANCIAMIENTO', 'PRESPUESTO PARTICIPATIVO    (SI - NO)',
       'GRUPOS DE ATENCIÓN PRIORITARIA   (SI/No)', 'PRESUPUESTO CODIFICADO', 'REFORMA', 'CODIFICADO FINAL',
@@ -96,6 +102,7 @@ const SECCIONES = [
   },
   {
     titulo: '5. Ejecución mensual - avance físico (a cargo del Gestor de Objetivos)',
+    corto: '5. Avance físico',
     trimestres: [
       { meses: ['E-ENERO', 'E-FEBRERO', 'E-MARZO'], total: 'TRIMESTRE 1' },
       { meses: ['E-ABRIL', 'E-MAYO', 'E-JUNIO'], total: 'TRIMESTRE 2' },
@@ -107,6 +114,7 @@ const SECCIONES = [
   },
   {
     titulo: '6. Ejecución mensual - pagado',
+    corto: '6. Pagado',
     trimestres: [
       { meses: ['ENERO', 'FEBRERO', 'MARZO'], total: 'PAGADO TRIMESTRE 1' },
       { meses: ['ABRIL', 'MAYO', 'JUNIO'], total: 'PAGADO TRIMESTRE 2' },
@@ -117,6 +125,7 @@ const SECCIONES = [
   },
   {
     titulo: '7. Indicadores de gestión (calculados por el sistema)',
+    corto: '7. Indicadores',
     campos: [
       'INDICADOR DE EFICIENCIA', 'INDICADOR DE EFICACIA', 'INDICADOR DE EFECTIVIDAD',
       'INDICADOR DE CUMPLIMIENTO DE CRONOGRAMA (1 er TRIMESTRE)',
@@ -125,6 +134,7 @@ const SECCIONES = [
   },
   {
     titulo: '8. Observaciones',
+    corto: '8. Observaciones',
     campos: ['OBSERVACIONES']
   }
 ];
@@ -353,20 +363,59 @@ function verDetalle(codigo) {
     <button class="secundario" onclick="cerrarDetalle()">Cerrar</button>
   </div>`;
 
-  SECCIONES.forEach(seccion => {
-    html += `<div class="seccion"><h4 class="seccion-titulo">${seccion.titulo}</h4><div class="seccion-cuerpo">`;
+  // Menú lateral: un enlace por sección, con desplazamiento suave hacia ella al hacer clic.
+  let htmlMenu = '<nav class="detalle-menu">';
+  SECCIONES.forEach((seccion, idx) => {
+    htmlMenu += `<a href="#seccion-${idx}" class="nav-seccion" data-idx="${idx}">${seccion.corto}</a>`;
+  });
+  htmlMenu += '</nav>';
+
+  let htmlSecciones = '<div class="detalle-secciones">';
+  SECCIONES.forEach((seccion, idx) => {
+    htmlSecciones += `<div class="seccion" id="seccion-${idx}"><h4 class="seccion-titulo">${seccion.titulo}</h4><div class="seccion-cuerpo">`;
     if (seccion.trimestres) {
-      html += renderBloqueTrimestral(codigo, datos, seccion.trimestres, seccion.extra, seccion.esPorcentaje);
+      htmlSecciones += `<div class="tabla-scroll">${renderBloqueTrimestral(codigo, datos, seccion.trimestres, seccion.extra, seccion.esPorcentaje)}</div>`;
     } else if (seccion.tipo === 'porcentaje') {
-      seccion.campos.forEach(header => { html += renderCampoPorcentaje(codigo, header, datos); });
+      seccion.campos.forEach(header => { htmlSecciones += renderCampoPorcentaje(codigo, header, datos); });
     } else {
-      seccion.campos.forEach(header => { html += renderCampo(codigo, header, datos); });
+      seccion.campos.forEach(header => { htmlSecciones += renderCampo(codigo, header, datos); });
     }
-    html += '</div></div>';
+    htmlSecciones += '</div></div>';
+  });
+  htmlSecciones += '</div>';
+
+  html += `<div class="detalle-layout">${htmlMenu}${htmlSecciones}</div>`;
+  cont.innerHTML = html;
+  activarMenuDetalle(cont);
+  cont.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/**
+ * Activa el menú lateral del detalle: clic para desplazarse suavemente a la sección,
+ * y resaltado automático de la sección visible mientras el usuario hace scroll.
+ */
+function activarMenuDetalle(cont) {
+  const links = cont.querySelectorAll('.nav-seccion');
+  links.forEach(link => {
+    link.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      const destino = document.getElementById('seccion-' + link.dataset.idx);
+      if (destino) destino.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   });
 
-  cont.innerHTML = html;
-  cont.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const secciones = cont.querySelectorAll('.seccion[id^="seccion-"]');
+  if (!secciones.length || !('IntersectionObserver' in window)) return;
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+      const idx = entry.target.id.replace('seccion-', '');
+      links.forEach(l => l.classList.toggle('activo', l.dataset.idx === idx));
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' }); // considera "activa" la sección cerca de la parte superior visible
+
+  secciones.forEach(s => observer.observe(s));
 }
 
 function cerrarDetalle() {
