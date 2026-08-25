@@ -157,6 +157,9 @@ input.celda-bloqueada {
   color: #999;
 }
 
+.volver-link { color: white; text-decoration: none; font-size: 13px; opacity: 0.9; }
+.volver-link:hover { text-decoration: underline; }
+
 .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
 .tabs button { background: white; color: var(--azul); border: 1px solid var(--azul); }
 .tabs button.activo { background: var(--azul); color: white; }
