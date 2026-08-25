@@ -19,10 +19,12 @@
 <main>
   <div class="tarjeta">
     <p>Estos son los proyectos a tu cargo. Ingresa el avance del mes correspondiente y envíalo a aprobación del Director.</p>
+    <div class="tabla-scroll">
     <table>
       <thead><tr><th>Código</th><th>Proyecto</th><th>Avance Físico</th><th></th></tr></thead>
       <tbody id="tablaProyectos"></tbody>
     </table>
+    </div>
   </div>
   <div class="tarjeta" id="detalleProyecto" style="display:none"></div>
 </main>
@@ -149,14 +151,17 @@ function verDetalle(codigo) {
     presiona "Enviar" para que el Director de Planificación lo apruebe. Los meses ya aprobados quedan bloqueados.
   </p>`;
 
+  let htmlMenu = '<nav class="detalle-menu">';
+  let htmlSecciones = '<div class="detalle-secciones">';
+
   TRIMESTRES_GESTOR.forEach((t, idxTrimestre) => {
-    html += `<div class="seccion"><h4 class="seccion-titulo">Trimestre ${idxTrimestre + 1}</h4><div class="seccion-cuerpo" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));">`;
+    htmlSecciones += `<div class="seccion" id="seccion-${idxTrimestre}"><h4 class="seccion-titulo">Trimestre ${idxTrimestre + 1}</h4><div class="seccion-cuerpo" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));">`;
     t.meses.forEach((headerBuscado, i) => {
       const headerReal = buscarHeaderReal(datos, headerBuscado);
       const mesNum = t.numeros[i];
       const nombreMes = headerBuscado.replace(/^E-\s*/, '');
       if (!headerReal) {
-        html += `<div class="campo-item"><label>${nombreMes}</label><span class="valor-vacio">— (columna no encontrada) —</span></div>`;
+        htmlSecciones += `<div class="campo-item"><label>${nombreMes}</label><span class="valor-vacio">— (columna no encontrada) —</span></div>`;
         return;
       }
       const campo = datos[headerReal];
@@ -168,7 +173,7 @@ function verDetalle(codigo) {
         const avisoRechazo = estado === 'RECHAZADO'
           ? `<div style="font-size:11px;color:var(--rojo);margin-bottom:4px">Rechazado: ${campo.comentario_rechazo || 'sin motivo especificado'}</div>`
           : '';
-        html += `<div class="campo-item">
+        htmlSecciones += `<div class="campo-item">
           <label>${nombreMes} <span class="badge ${estado}">${estado === 'RECHAZADO' ? 'rechazado - corrige y reenvía' : 'pendiente de envío'}</span></label>
           ${avisoRechazo}
           <div class="campo-input-row">
@@ -179,12 +184,12 @@ function verDetalle(codigo) {
           <button class="aprobar" style="margin-top:4px" onclick="enviarAprobacion('${codigo.replace(/'/g,"\\'")}', ${mesNum})">Enviar a aprobación</button>
         </div>`;
       } else if (estado === 'ENVIADO') {
-        html += `<div class="campo-item">
+        htmlSecciones += `<div class="campo-item">
           <label>${nombreMes} <span class="badge ENVIADO">enviado - esperando aprobación</span></label>
           <input class="celda-bloqueada" value="${pctActual}%" disabled>
         </div>`;
       } else {
-        html += `<div class="campo-item">
+        htmlSecciones += `<div class="campo-item">
           <label>${nombreMes} <span class="badge APROBADO">Aprobado</span></label>
           <input class="celda-bloqueada" value="${pctActual}%" disabled>
         </div>`;
@@ -193,20 +198,53 @@ function verDetalle(codigo) {
     const totalHeaderReal = buscarHeaderReal(datos, t.total);
     const campoTotal = totalHeaderReal ? datos[totalHeaderReal] : null;
     const totalMostrado = campoTotal ? porcentajeANumero(campoTotal.valor) + '%' : '—';
-    html += `<div class="campo-item"><label>Total del trimestre (calculado por el sistema)</label>
+    htmlSecciones += `<div class="campo-item"><label>Total del trimestre (calculado por el sistema)</label>
       <input class="celda-bloqueada" value="${totalMostrado}" disabled></div>`;
-    html += '</div></div>';
+    htmlSecciones += '</div></div>';
+    htmlMenu += `<a href="#seccion-${idxTrimestre}" class="nav-seccion" data-idx="${idxTrimestre}">Trimestre ${idxTrimestre + 1}</a>`;
   });
 
   const claveAvanceFisico = buscarHeaderReal(datos, 'AVANCE FÍSICO');
   const campoAvanceFisico = claveAvanceFisico ? datos[claveAvanceFisico] : null;
   if (campoAvanceFisico) {
-    html += `<div class="seccion"><h4 class="seccion-titulo">Avance físico total (calculado por el sistema)</h4>
+    htmlSecciones += `<div class="seccion" id="seccion-total"><h4 class="seccion-titulo">Avance físico total (calculado por el sistema)</h4>
       <div class="seccion-cuerpo"><input class="celda-bloqueada" value="${porcentajeANumero(campoAvanceFisico.valor)}%" disabled></div></div>`;
+    htmlMenu += `<a href="#seccion-total" class="nav-seccion" data-idx="total">Avance total</a>`;
   }
+  htmlMenu += '</nav>';
+  htmlSecciones += '</div>';
 
-  cont.innerHTML = html;
+  cont.innerHTML = html + `<div class="detalle-layout">${htmlMenu}${htmlSecciones}</div>`;
+  activarMenuDetalle(cont);
   cont.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/**
+ * Activa el menú lateral del detalle: clic para desplazarse suavemente a la sección,
+ * y resaltado automático de la sección visible mientras el usuario hace scroll.
+ */
+function activarMenuDetalle(cont) {
+  const links = cont.querySelectorAll('.nav-seccion');
+  links.forEach(link => {
+    link.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      const destino = document.getElementById('seccion-' + link.dataset.idx);
+      if (destino) destino.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
+  const secciones = cont.querySelectorAll('.seccion[id^="seccion-"]');
+  if (!secciones.length || !('IntersectionObserver' in window)) return;
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+      const idx = entry.target.id.replace('seccion-', '');
+      links.forEach(l => l.classList.toggle('activo', l.dataset.idx === idx));
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+
+  secciones.forEach(s => observer.observe(s));
 }
 
 function cerrarDetalle() {
