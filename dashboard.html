@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Dashboard Gerencial - Gestión de Objetivos</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/dashboard.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+</head>
+<body>
+
+<header>
+  <h1>Dashboard Gerencial</h1>
+  <div class="usuario-info">
+    <span id="nombreUsuario"></span> &nbsp;
+    <a href="director.html" class="volver-link">← Volver a la matriz</a> &nbsp;
+    <button class="secundario" onclick="salir()">Cerrar sesión</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ===== FILTROS ===== -->
+  <div class="panel-filtros">
+    <div class="filtro-item">
+      <label>Unidad Administrativa</label>
+      <select id="filtroUnidad"><option value="">Todas</option></select>
+    </div>
+    <div class="filtro-item">
+      <label>Fuente de Financiamiento</label>
+      <select id="filtroFuente"><option value="">Todas</option></select>
+    </div>
+    <div class="filtro-item">
+      <label>Estado de avance</label>
+      <select id="filtroSemaforo">
+        <option value="">Todos</option>
+        <option value="rojo">🔴 Crítico (&lt;40%)</option>
+        <option value="amarillo">🟡 En proceso (40-74%)</option>
+        <option value="verde">🟢 En meta (≥75%)</option>
+      </select>
+    </div>
+    <button class="secundario" onclick="limpiarFiltros()">Limpiar filtros</button>
+  </div>
+
+  <!-- ===== KPIs ===== -->
+  <div class="kpi-grid" id="kpiGrid"></div>
+
+  <!-- ===== GRÁFICOS ===== -->
+  <div class="graficos-grid">
+    <div class="tarjeta grafico-caja">
+      <h4>Distribución de proyectos por avance físico</h4>
+      <canvas id="chartSemaforo"></canvas>
+    </div>
+    <div class="tarjeta grafico-caja">
+      <h4>Avance físico promedio por Unidad Administrativa</h4>
+      <canvas id="chartUnidad"></canvas>
+    </div>
+  </div>
+  <div class="tarjeta grafico-caja grafico-ancho">
+    <h4>Ejecución presupuestaria por Unidad Administrativa (Codificado / Devengado / Pagado)</h4>
+    <canvas id="chartPresupuesto"></canvas>
+  </div>
+
+  <!-- ===== TABLA DETALLE ===== -->
+  <div class="tarjeta">
+    <h4 style="margin-top:0">Detalle de proyectos <span id="contadorFiltrados" style="font-weight:400;color:#666;font-size:13px"></span></h4>
+    <div class="tabla-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Código</th><th>Proyecto</th><th>Unidad Administrativa</th>
+            <th>Avance Físico</th><th>Presupuesto Codificado</th><th>Devengado</th><th>Total Pagado</th><th>% Ejecución</th>
+          </tr>
+        </thead>
+        <tbody id="tablaDetalle"></tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<script src="js/config.js"></script>
+<script src="js/api.js"></script>
+<script>
+requireLogin(['Director de Planificación']);
+document.getElementById('nombreUsuario').textContent = sessionStorage.getItem('nombre') || sessionStorage.getItem('usuario');
+function salir() { cerrarSesionLocal(); window.location.href = 'index.html'; }
+
+// ---------- Helpers de parseo (mismos criterios que el resto de la app) ----------
+
+function porcentajeANumero(valorCrudo) {
+  if (valorCrudo === null || valorCrudo === undefined || valorCrudo === '') return 0;
+  if (typeof valorCrudo === 'number') return valorCrudo <= 1 ? Math.round(valorCrudo * 100) : Math.round(valorCrudo);
+  const limpio = String(valorCrudo).replace('%', '').replace(',', '.').trim();
+  const num = parseFloat(limpio);
+  return isNaN(num) ? 0 : num;
+}
+
+function parseMoneda(valorCrudo) {
+  if (valorCrudo === null || valorCrudo === undefined || valorCrudo === '') return 0;
+  if (typeof valorCrudo === 'number') return valorCrudo;
+  let limpio = String(valorCrudo).replace(/[^0-9,.\-]/g, '');
+  limpio = limpio.replace(/\./g, '').replace(',', '.'); // formato latino: punto=miles, coma=decimal
+  const num = parseFloat(limpio);
+  return isNaN(num) ? 0 : num;
+}
+
+function formatMoneda(num) {
+  return '$' + num.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function colorSemaforo(pct) {
+  if (pct < 40) return 'rojo';
+  if (pct < 75) return 'amarillo';
+  return 'verde';
+}
+
+const COLORES_SEMAFORO = { rojo: '#c62828', amarillo: '#f9a825', verde: '#2e7d32' };
+
+function buscarHeaderReal(datos, headerBuscado) {
+  const objetivo = String(headerBuscado).replace(/\s+/g, ' ').trim().toUpperCase();
+  return Object.keys(datos).find(k => String(k).replace(/\s+/g, ' ').trim().toUpperCase() === objetivo) || null;
+}
+function valorDe(datos, header) {
+  const real = buscarHeaderReal(datos, header);
+  return real ? datos[real].valor : null;
+}
+
+// ---------- Estado ----------
+
+let proyectos = [];      // lista normalizada: { codigo, proyecto, unidad, fuente, avancePct, codificado, devengado }
+let chartSemaforo, chartUnidad, chartPresupuesto;
+
+async function cargarDatos() {
+  const res = await apiCall('obtenerMatriz', {});
+  if (!res.ok) { alert(res.error); return; }
+
+  proyectos = res.filas.map(fila => {
+    const d = fila.datos;
+    return {
+      codigo: fila.codigo_proyecto,
+      proyecto: valorDe(d, 'PROYECTO') || '',
+      unidad: valorDe(d, 'UNIDAD ADMINISTRATIVA') || '(sin unidad)',
+      fuente: valorDe(d, 'FUENTE DE FINANCIAMIENTO') || '(sin fuente)',
+      avancePct: porcentajeANumero(valorDe(d, 'AVANCE FÍSICO')),
+      codificado: parseMoneda(valorDe(d, 'PRESUPUESTO CODIFICADO')),
+      devengado: parseMoneda(valorDe(d, 'DEVENGADO')),
+      totalPagado: parseMoneda(valorDe(d, 'TOTAL PAGADO'))
+    };
+  });
+
+  poblarFiltros();
+  renderizarTodo();
+}
+
+function poblarFiltros() {
+  const unidades = [...new Set(proyectos.map(p => p.unidad))].sort();
+  const fuentes = [...new Set(proyectos.map(p => p.fuente))].sort();
+  const selUnidad = document.getElementById('filtroUnidad');
+  const selFuente = document.getElementById('filtroFuente');
+  unidades.forEach(u => { const o = document.createElement('option'); o.value = u; o.textContent = u; selUnidad.appendChild(o); });
+  fuentes.forEach(f => { const o = document.createElement('option'); o.value = f; o.textContent = f; selFuente.appendChild(o); });
+}
+
+function limpiarFiltros() {
+  document.getElementById('filtroUnidad').value = '';
+  document.getElementById('filtroFuente').value = '';
+  document.getElementById('filtroSemaforo').value = '';
+  renderizarTodo();
+}
+
+function obtenerProyectosFiltrados() {
+  const unidad = document.getElementById('filtroUnidad').value;
+  const fuente = document.getElementById('filtroFuente').value;
+  const semaforo = document.getElementById('filtroSemaforo').value;
+  return proyectos.filter(p => {
+    if (unidad && p.unidad !== unidad) return false;
+    if (fuente && p.fuente !== fuente) return false;
+    if (semaforo && colorSemaforo(p.avancePct) !== semaforo) return false;
+    return true;
+  });
+}
+
+// ---------- Render principal ----------
+
+function renderizarTodo() {
+  const filtrados = obtenerProyectosFiltrados();
+  renderizarKPIs(filtrados);
+  renderizarChartSemaforo(filtrados);
+  renderizarChartUnidad(filtrados);
+  renderizarChartPresupuesto(filtrados);
+  renderizarTabla(filtrados);
+}
+
+function renderizarKPIs(lista) {
+  const total = lista.length;
+  const avancePromedio = total ? Math.round(lista.reduce((s, p) => s + p.avancePct, 0) / total) : 0;
+  const sumaCodificado = lista.reduce((s, p) => s + p.codificado, 0);
+  const sumaDevengado = lista.reduce((s, p) => s + p.devengado, 0);
+  const sumaPagado = lista.reduce((s, p) => s + p.totalPagado, 0);
+  const pctEjecucion = sumaCodificado ? Math.round((sumaDevengado / sumaCodificado) * 100) : 0;
+  const pctPagado = sumaCodificado ? Math.round((sumaPagado / sumaCodificado) * 100) : 0;
+  const enRiesgo = lista.filter(p => colorSemaforo(p.avancePct) === 'rojo').length;
+
+  const kpis = [
+    { label: 'Total de proyectos', valor: total, clase: '' },
+    { label: 'Avance físico promedio', valor: avancePromedio + '%', clase: colorSemaforo(avancePromedio) },
+    { label: 'Ejecución presupuestaria', valor: pctEjecucion + '%', clase: '' },
+    { label: '% Pagado del codificado', valor: pctPagado + '%', clase: '' },
+    { label: 'Proyectos en riesgo', valor: enRiesgo, clase: enRiesgo > 0 ? 'rojo' : 'verde' },
+    { label: 'Presupuesto codificado', valor: formatMoneda(sumaCodificado), clase: '', pequeno: true },
+    { label: 'Devengado a la fecha', valor: formatMoneda(sumaDevengado), clase: '', pequeno: true },
+    { label: 'Total pagado', valor: formatMoneda(sumaPagado), clase: '', pequeno: true }
+  ];
+
+  document.getElementById('kpiGrid').innerHTML = kpis.map(k => `
+    <div class="kpi-card ${k.clase}">
+      <div class="kpi-valor ${k.pequeno ? 'kpi-valor-pequeno' : ''}">${k.valor}</div>
+      <div class="kpi-label">${k.label}</div>
+    </div>
+  `).join('');
+}
+
+function renderizarChartSemaforo(lista) {
+  const counts = { rojo: 0, amarillo: 0, verde: 0 };
+  lista.forEach(p => counts[colorSemaforo(p.avancePct)]++);
+  const data = [counts.rojo, counts.amarillo, counts.verde];
+  const labels = ['Crítico (<40%)', 'En proceso (40-74%)', 'En meta (≥75%)'];
+  const colores = [COLORES_SEMAFORO.rojo, COLORES_SEMAFORO.amarillo, COLORES_SEMAFORO.verde];
+
+  if (chartSemaforo) { chartSemaforo.data.datasets[0].data = data; chartSemaforo.update(); return; }
+  chartSemaforo = new Chart(document.getElementById('chartSemaforo'), {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data, backgroundColor: colores, borderWidth: 0 }] },
+    options: { plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }, cutout: '65%' }
+  });
+}
+
+function renderizarChartUnidad(lista) {
+  const porUnidad = {};
+  lista.forEach(p => {
+    if (!porUnidad[p.unidad]) porUnidad[p.unidad] = [];
+    porUnidad[p.unidad].push(p.avancePct);
+  });
+  const labels = Object.keys(porUnidad).sort();
+  const data = labels.map(u => Math.round(porUnidad[u].reduce((s, v) => s + v, 0) / porUnidad[u].length));
+  const colores = data.map(v => COLORES_SEMAFORO[colorSemaforo(v)]);
+
+  if (chartUnidad) {
+    chartUnidad.data.labels = labels;
+    chartUnidad.data.datasets[0].data = data;
+    chartUnidad.data.datasets[0].backgroundColor = colores;
+    chartUnidad.update();
+    return;
+  }
+  chartUnidad = new Chart(document.getElementById('chartUnidad'), {
+    type: 'bar',
+    data: { labels, datasets: [{ label: 'Avance físico promedio (%)', data, backgroundColor: colores }] },
+    options: {
+      indexAxis: 'y',
+      scales: { x: { min: 0, max: 100, ticks: { callback: v => v + '%' } } },
+      plugins: { legend: { display: false } }
+    }
+  });
+}
+
+function renderizarChartPresupuesto(lista) {
+  const porUnidad = {};
+  lista.forEach(p => {
+    if (!porUnidad[p.unidad]) porUnidad[p.unidad] = { codificado: 0, devengado: 0, pagado: 0 };
+    porUnidad[p.unidad].codificado += p.codificado;
+    porUnidad[p.unidad].devengado += p.devengado;
+    porUnidad[p.unidad].pagado += p.totalPagado;
+  });
+  const labels = Object.keys(porUnidad).sort();
+  const dataCod = labels.map(u => porUnidad[u].codificado);
+  const dataDev = labels.map(u => porUnidad[u].devengado);
+  const dataPag = labels.map(u => porUnidad[u].pagado);
+
+  if (chartPresupuesto) {
+    chartPresupuesto.data.labels = labels;
+    chartPresupuesto.data.datasets[0].data = dataCod;
+    chartPresupuesto.data.datasets[1].data = dataDev;
+    chartPresupuesto.data.datasets[2].data = dataPag;
+    chartPresupuesto.update();
+    return;
+  }
+  chartPresupuesto = new Chart(document.getElementById('chartPresupuesto'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Codificado', data: dataCod, backgroundColor: '#1d4e89' },
+        { label: 'Devengado', data: dataDev, backgroundColor: '#8ab4d8' },
+        { label: 'Pagado', data: dataPag, backgroundColor: '#2e7d32' }
+      ]
+    },
+    options: {
+      plugins: { legend: { position: 'bottom' } },
+      scales: { y: { ticks: { callback: v => '$' + Number(v).toLocaleString('es-EC') } } }
+    }
+  });
+}
+
+function renderizarTabla(lista) {
+  document.getElementById('contadorFiltrados').textContent = `(${lista.length} de ${proyectos.length})`;
+  document.getElementById('tablaDetalle').innerHTML = lista.map(p => {
+    const color = colorSemaforo(p.avancePct);
+    const pctEjec = p.codificado ? Math.round((p.devengado / p.codificado) * 100) : 0;
+    return `<tr>
+      <td>${p.codigo}</td>
+      <td>${p.proyecto}</td>
+      <td>${p.unidad}</td>
+      <td><span class="badge-semaforo ${color}">${p.avancePct}%</span></td>
+      <td>${formatMoneda(p.codificado)}</td>
+      <td>${formatMoneda(p.devengado)}</td>
+      <td>${formatMoneda(p.totalPagado)}</td>
+      <td>${pctEjec}%</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="8" style="text-align:center;color:#888">No hay proyectos que coincidan con los filtros.</td></tr>';
+}
+
+document.getElementById('filtroUnidad').addEventListener('change', renderizarTodo);
+document.getElementById('filtroFuente').addEventListener('change', renderizarTodo);
+document.getElementById('filtroSemaforo').addEventListener('change', renderizarTodo);
+
+cargarDatos();
+</script>
+</body>
+</html>
