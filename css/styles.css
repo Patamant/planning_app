@@ -61,6 +61,61 @@ button.rechazar { background: var(--rojo); }
 
 main { padding: 20px; max-width: 1400px; margin: 0 auto; }
 
+/* ===== Menú lateral de navegación dentro del detalle de proyecto ===== */
+.detalle-layout {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.detalle-menu {
+  flex: 0 0 210px;
+  position: sticky;
+  top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: white;
+  border: 1px solid var(--gris-borde);
+  border-radius: 6px;
+  padding: 10px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+}
+.detalle-menu a {
+  padding: 8px 10px;
+  border-radius: 4px;
+  text-decoration: none;
+  color: var(--texto);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.detalle-menu a:hover { background: var(--gris); }
+.detalle-menu a.activo { background: var(--azul); color: white; }
+.detalle-secciones { flex: 1; min-width: 0; }
+
+/* Contenedor con scroll horizontal para tablas anchas (evita que se aplasten en móvil) */
+.tabla-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.tabla-scroll table { min-width: 640px; }
+
+@media (max-width: 760px) {
+  .detalle-layout { flex-direction: column; }
+  .detalle-menu {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    flex-direction: row;
+    width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    max-height: none;
+  }
+  .detalle-menu a { flex: 0 0 auto; }
+  .seccion-cuerpo { grid-template-columns: 1fr !important; }
+  main { padding: 10px; }
+  table { font-size: 12px; }
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -106,6 +161,16 @@ input.celda-bloqueada {
 .tabs button { background: white; color: var(--azul); border: 1px solid var(--azul); }
 .tabs button.activo { background: var(--azul); color: white; }
 
+.badge-contador {
+  background: var(--rojo);
+  color: white;
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
 .tarjeta {
   background: white;
   border-radius: 6px;
@@ -114,7 +179,29 @@ input.celda-bloqueada {
   box-shadow: 0 1px 4px rgba(0,0,0,0.06);
 }
 
-/* ===== Detalle de proyecto por secciones ===== */
+/* ===== Indicador de avance físico (semáforo) ===== */
+.progreso-wrap { display: flex; align-items: center; gap: 8px; min-width: 130px; }
+.progreso-barra-contenedor {
+  flex: 1;
+  height: 14px;
+  background: #e6e9ec;
+  border-radius: 7px;
+  overflow: hidden;
+}
+.progreso-barra {
+  height: 100%;
+  border-radius: 7px 0 0 7px;
+  transition: width 0.3s ease;
+}
+.progreso-barra.rojo { background: var(--rojo); }
+.progreso-barra.amarillo { background: #f9a825; }
+.progreso-barra.verde { background: var(--verde); }
+.progreso-texto { font-size: 12px; font-weight: 600; min-width: 42px; text-align: right; }
+.progreso-texto.rojo { color: var(--rojo); }
+.progreso-texto.amarillo { color: #a56b00; }
+.progreso-texto.verde { color: var(--verde); }
+
+.detalle-header .progreso-wrap { min-width: 160px; }
 .detalle-header {
   display: flex;
   justify-content: space-between;
@@ -158,6 +245,7 @@ input.celda-bloqueada {
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
+  min-width: 560px;
 }
 .tabla-trimestral th { background: #dde6ef; text-align: center; padding: 4px; }
 .tabla-trimestral td { text-align: center; padding: 4px; }
